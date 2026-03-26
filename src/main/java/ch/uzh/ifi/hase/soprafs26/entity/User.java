@@ -1,10 +1,14 @@
 package ch.uzh.ifi.hase.soprafs26.entity;
 
-import jakarta.persistence.*;
-
-import ch.uzh.ifi.hase.soprafs26.constant.UserStatus;
-
 import java.io.Serializable;
+import java.time.Instant;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.Id;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.Table;
 
 /**
  * Internal User Representation
@@ -26,17 +30,11 @@ public class User implements Serializable {
 	@GeneratedValue
 	private Long id;
 
-	@Column(nullable = false)
-	private String name;
-
 	@Column(nullable = false, unique = true)
 	private String username;
 
-	@Column(nullable = false, unique = true)
-	private String token;
+	private Instant createdAt;
 
-	@Column(nullable = false)
-	private UserStatus status;
 
 	public Long getId() {
 		return id;
@@ -44,14 +42,6 @@ public class User implements Serializable {
 
 	public void setId(Long id) {
 		this.id = id;
-	}
-
-	public String getName() {
-		return name;
-	}
-
-	public void setName(String name) {
-		this.name = name;
 	}
 
 	public String getUsername() {
@@ -62,19 +52,16 @@ public class User implements Serializable {
 		this.username = username;
 	}
 
-	public String getToken() {
-		return token;
+	public Instant getCreatedAt() {
+		return createdAt;
 	}
 
-	public void setToken(String token) {
-		this.token = token;
+	public void setCreatedAt(Instant createdAt) {
+		this.createdAt = createdAt;
 	}
 
-	public UserStatus getStatus() {
-		return status;
-	}
-
-	public void setStatus(UserStatus status) {
-		this.status = status;
+	@PrePersist
+	protected void onCreate() {
+		this.createdAt = Instant.now();
 	}
 }
