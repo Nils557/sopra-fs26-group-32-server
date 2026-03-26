@@ -2,6 +2,7 @@ package ch.uzh.ifi.hase.soprafs26.rest.mapper;
 
 import org.mapstruct.*;
 import org.mapstruct.factory.Mappers;
+import java.time.Instant;
 
 import ch.uzh.ifi.hase.soprafs26.entity.User;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.UserGetDTO;
@@ -28,5 +29,6 @@ public interface DTOMapper {
 
 	@Mapping(source = "id", target = "id")
 	@Mapping(source = "username", target = "username")
+	@Mapping(source = "createdAt", target = "createdAt")
 	UserGetDTO convertEntityToUserGetDTO(User user);
 }

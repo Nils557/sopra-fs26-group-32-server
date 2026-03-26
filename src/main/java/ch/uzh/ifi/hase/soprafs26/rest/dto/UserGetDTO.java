@@ -1,9 +1,13 @@
 package ch.uzh.ifi.hase.soprafs26.rest.dto;
 
+import ch.uzh.ifi.hase.soprafs26.entity.User;
+import java.time.Instant;
+
 public class UserGetDTO {
 
 	private Long id;
 	private String username;
+	private Instant createdAt;
 
 	public Long getId() {
 		return id;
@@ -20,6 +24,14 @@ public class UserGetDTO {
 
 	public void setUsername(String username) {
 		this.username = username;
+	}
+
+	public Instant getCreatedAt() {
+		return createdAt;
+	}
+
+	public void setCreatedAt(Instant createdAt) {
+		this.createdAt = createdAt;
 	}
 
 }
