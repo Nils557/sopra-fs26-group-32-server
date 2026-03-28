@@ -1,5 +1,7 @@
 package ch.uzh.ifi.hase.soprafs26.service;
 
+import java.util.List;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -10,8 +12,6 @@ import org.springframework.web.server.ResponseStatusException;
 
 import ch.uzh.ifi.hase.soprafs26.entity.User;
 import ch.uzh.ifi.hase.soprafs26.repository.UserRepository;
-
-import java.util.List;
 
 /**
  * User Service
@@ -68,5 +68,9 @@ public class UserService {
 		if (userByUsername != null) {
 			throw new ResponseStatusException(HttpStatus.CONFLICT, "The username provided is not unique. Therefore, the user could not be created!");
 		}
+	}
+
+	public void deleteUser(Long userId) {
+		userRepository.deleteById(userId);
 	}
 }
