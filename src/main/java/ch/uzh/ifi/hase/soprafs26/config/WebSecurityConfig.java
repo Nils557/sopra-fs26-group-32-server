@@ -21,7 +21,7 @@ public class WebSecurityConfig {
             .csrf(csrf -> csrf.disable()) // Disable CSRF for Postman testing
             .headers(headers -> headers.frameOptions(frameOptions -> frameOptions.sameOrigin()))
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/users").permitAll() // Allow everyone to register
+                .requestMatchers("/users/**", "/lobbies/**").permitAll() // Allow everyone to register
                 .requestMatchers("/h2-console/**").permitAll()
                 .anyRequest().authenticated()      // Lock everything else
             )
