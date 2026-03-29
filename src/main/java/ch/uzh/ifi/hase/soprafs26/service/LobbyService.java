@@ -5,11 +5,15 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
+import ch.uzh.ifi.hase.soprafs26.constant.LobbyStatus;
 import ch.uzh.ifi.hase.soprafs26.entity.Lobby;
 import ch.uzh.ifi.hase.soprafs26.repository.LobbyRepository;
+import ch.uzh.ifi.hase.soprafs26.repository.UserRepository;
 
 @Service
 @Transactional
@@ -18,15 +22,40 @@ public class LobbyService {
     private final Logger log = LoggerFactory.getLogger(LobbyService.class);
 
     private final LobbyRepository lobbyRepository;
+    private final UserRepository userRepository;
 
-    public LobbyService(@Qualifier("lobbyRepository") LobbyRepository lobbyRepository) {
+    public LobbyService(@Qualifier("lobbyRepository") LobbyRepository lobbyRepository,
+                        @Qualifier("userRepository") UserRepository userRepository) {
         this.lobbyRepository = lobbyRepository;
+        this.userRepository = userRepository;
     }
 
     public Lobby createLobby(Lobby newLobby) {
+        // Validate host user exists
+        if (userRepository.findById(newLobby.getHostUserId()).isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Host user not found");
+        }
+
+        // Validate rounds between 1 and 10
+        if (newLobby.getTotalRounds() < 1 || newLobby.getTotalRounds() > 10) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Rounds must be between 1 and 10");
+        }
+
+        // Validate max players
+        if (newLobby.getMaxPlayers() < 2) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Max players must be at least 2");
+        }
+
         // Generate unique lobby code
         newLobby.setLobbyCode(generateLobbyCode());
-        
+
+        // Set initial status
+        newLobby.setStatus(LobbyStatus.WAITING);
+
+        // Save to database
+        newLobby = lobbyRepository.save(newLobby);
+        lobbyRepository.flush();
+
         log.debug("Created lobby with code: {}", newLobby.getLobbyCode());
         return newLobby;
     }
@@ -34,7 +63,6 @@ public class LobbyService {
     private String generateLobbyCode() {
         String code;
         do {
-            // Generate code like "GX-7742"
             String letters = UUID.randomUUID().toString().substring(0, 2).toUpperCase();
             String numbers = String.valueOf((int)(Math.random() * 9000) + 1000);
             code = letters + "-" + numbers;
@@ -42,3 +70,5 @@ public class LobbyService {
         return code;
     }
 }
+
+
