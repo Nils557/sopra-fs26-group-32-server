@@ -5,6 +5,9 @@ import org.mapstruct.factory.Mappers;
 import java.time.Instant;
 
 import ch.uzh.ifi.hase.soprafs26.entity.User;
+import ch.uzh.ifi.hase.soprafs26.entity.Lobby;
+import ch.uzh.ifi.hase.soprafs26.rest.dto.LobbyGetDTO;
+import ch.uzh.ifi.hase.soprafs26.rest.dto.LobbyPostDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.UserGetDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.UserPostDTO;
 
@@ -31,4 +34,21 @@ public interface DTOMapper {
 	@Mapping(source = "username", target = "username")
 	@Mapping(source = "createdAt", target = "createdAt")
 	UserGetDTO convertEntityToUserGetDTO(User user);
+
+
+    // Lobby mappings
+    @Mapping(source = "hostUserId", target = "hostUserId")
+    @Mapping(source = "maxPlayers", target = "maxPlayers")
+    @Mapping(source = "totalRounds", target = "totalRounds")
+    Lobby convertLobbyPostDTOtoEntity(LobbyPostDTO lobbyPostDTO);
+
+    @Mapping(source = "id", target = "id")
+    @Mapping(source = "lobbyCode", target = "lobbyCode")
+    @Mapping(source = "maxPlayers", target = "maxPlayers")
+    @Mapping(source = "totalRounds", target = "totalRounds")
+    @Mapping(source = "status", target = "status")
+    @Mapping(source = "hostUserId", target = "hostUserId")
+    LobbyGetDTO convertEntityToLobbyGetDTO(Lobby lobby);
 }
+
+
