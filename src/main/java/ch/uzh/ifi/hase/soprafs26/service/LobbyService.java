@@ -62,13 +62,18 @@ public class LobbyService {
 
     private String generateLobbyCode() {
         String code;
+        String alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
         do {
-            String letters = UUID.randomUUID().toString().substring(0, 2).toUpperCase();
+            char l1 = alphabet.charAt((int)(Math.random() * 26));
+            char l2 = alphabet.charAt((int)(Math.random() * 26));
+            String letters = "" + l1 + l2;
             String numbers = String.valueOf((int)(Math.random() * 9000) + 1000);
             code = letters + "-" + numbers;
         } while (lobbyRepository.findByLobbyCode(code) != null);
         return code;
     }
 }
+
+
 
 
