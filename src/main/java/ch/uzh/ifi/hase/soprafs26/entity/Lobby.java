@@ -1,15 +1,19 @@
 package ch.uzh.ifi.hase.soprafs26.entity;
 
 import java.io.Serializable;
+import java.util.ArrayList;
 
 import ch.uzh.ifi.hase.soprafs26.constant.LobbyStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
+import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
+import java.util.List;
 
 @Entity
 @Table(name = "LOBBY")
@@ -35,6 +39,9 @@ public class Lobby implements Serializable {
     @Column(nullable = false)
     private Long hostUserId;
 
+    @OneToMany(fetch = FetchType.LAZY)
+    private List<User> players = new ArrayList<>();
+
     // Getters and Setters ONLY
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -53,4 +60,7 @@ public class Lobby implements Serializable {
 
     public Long getHostUserId() { return hostUserId; }
     public void setHostUserId(Long hostUserId) { this.hostUserId = hostUserId; }
+
+    public List<User> getPlayers() {return players;}
+    public void setPlayers(List<User> players) {this.players = players;}
 }
