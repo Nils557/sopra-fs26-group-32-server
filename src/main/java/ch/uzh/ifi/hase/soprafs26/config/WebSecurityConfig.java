@@ -23,6 +23,7 @@ public class WebSecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/users/**", "/lobbies/**").permitAll() // Allow everyone to register
                 .requestMatchers("/h2-console/**").permitAll()
+                .requestMatchers("/ws/**").permitAll()
                 .anyRequest().authenticated()      // Lock everything else
             )
             .httpBasic(Customizer.withDefaults()); // Enable Basic Auth
