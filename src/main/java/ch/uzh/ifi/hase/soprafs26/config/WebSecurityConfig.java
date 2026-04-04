@@ -18,16 +18,25 @@ public class WebSecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-            .csrf(csrf -> csrf.disable()) // Disable CSRF for Postman testing
-            .headers(headers -> headers.frameOptions(frameOptions -> frameOptions.sameOrigin()))
+            // 1. Disable CSRF globally (Recommended for testing/simplicity in this project)
+            .csrf(csrf -> csrf.disable()) 
+            
+            // 2. Allow frames from the same origin (Essential for H2 Console)
+            .headers(headers -> headers
+                .frameOptions(frame -> frame.sameOrigin())
+            )
+            
+            // 3. Define who can access what
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/users/**", "/lobbies/**").permitAll() // Allow everyone to register
+                .requestMatchers("/users/**", "/lobbies/**").permitAll() 
                 .requestMatchers("/h2-console/**").permitAll()
                 .requestMatchers("/ws/**").permitAll()
-                .anyRequest().authenticated()      // Lock everything else
+                .anyRequest().authenticated()
             )
-            .httpBasic(Customizer.withDefaults()); // Enable Basic Auth
+            
+            // 4. Enable Basic Auth (This is what triggers the login popup)
+            .httpBasic(Customizer.withDefaults());
 
         return http.build();
-}
+    }
 }
