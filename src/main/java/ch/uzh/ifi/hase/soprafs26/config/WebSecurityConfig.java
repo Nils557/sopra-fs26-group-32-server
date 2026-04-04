@@ -1,11 +1,17 @@
 package ch.uzh.ifi.hase.soprafs26.config;
 
+import java.util.Arrays;
+import java.util.Collections;
+
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.session.HttpSessionEventPublisher;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 @Configuration
 public class WebSecurityConfig {
@@ -18,16 +24,43 @@ public class WebSecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-            .csrf(csrf -> csrf.disable()) // Disable CSRF for Postman testing
-            .headers(headers -> headers.frameOptions(frameOptions -> frameOptions.sameOrigin()))
+            // 1. Enable CORS using the bean defined below
+            .cors(Customizer.withDefaults())
+            .csrf(csrf -> csrf.disable()) 
+            .headers(headers -> headers
+                .frameOptions(frame -> frame.sameOrigin())
+            )
+            
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/users/**", "/lobbies/**").permitAll() // Allow everyone to register
+                .requestMatchers("/users/**", "/lobbies/**").permitAll() 
                 .requestMatchers("/h2-console/**").permitAll()
                 .requestMatchers("/ws/**").permitAll()
-                .anyRequest().authenticated()      // Lock everything else
+                .anyRequest().authenticated()
             )
-            .httpBasic(Customizer.withDefaults()); // Enable Basic Auth
+            
+
+            .httpBasic(Customizer.withDefaults());
 
         return http.build();
-}
+    }
+
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration configuration = new CorsConfiguration();
+        
+        configuration.setAllowedOrigins(Arrays.asList(
+            "http://localhost:3000",                 
+            "https://sopra-fs26-group-32-client.oa.r.appspot.com" ,
+            "https://sopra-fs26-group-32-client.vercel.app/"
+        ));
+        
+        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "x-auth-token"));
+        configuration.setExposedHeaders(Collections.singletonList("x-auth-token"));
+        configuration.setAllowCredentials(true); 
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration); 
+        return source;
+    }
 }
