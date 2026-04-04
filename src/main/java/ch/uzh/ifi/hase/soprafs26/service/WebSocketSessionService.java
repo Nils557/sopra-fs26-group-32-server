@@ -7,7 +7,6 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class WebSocketSessionService {
-    // Maps WebSocket Session ID -> User ID
     private final Map<String, Long> sessionToUserMap = new ConcurrentHashMap<>();
 
     public void pair(String sessionId, Long userId) {

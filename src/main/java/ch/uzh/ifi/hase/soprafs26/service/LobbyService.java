@@ -1,7 +1,5 @@
 package ch.uzh.ifi.hase.soprafs26.service;
 
-import java.util.UUID;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -78,17 +76,14 @@ public class LobbyService {
         Lobby lobby = lobbyRepository.findByPlayers_Id(userId).orElse(null);
 
         if (lobby != null) {
-            // Task #70: If Host, delete the whole lobby first
             if (userId.equals(lobby.getHostUserId())) {
                 lobbyRepository.delete(lobby);
             } 
-            // Task #69: If regular player, remove from list
             else {
                 lobby.getPlayers().removeIf(p -> p.getId().equals(userId));
                 lobbyRepository.save(lobby);
             }
             
-            // CRITICAL: Force the database to update the LOBBY_PLAYERS table NOW
             lobbyRepository.flush(); 
         }
     }

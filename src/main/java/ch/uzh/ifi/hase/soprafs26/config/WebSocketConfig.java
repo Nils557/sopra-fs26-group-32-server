@@ -21,24 +21,18 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
-        // The "Front Door": Where the client connects
         registry.addEndpoint("/ws")
-                .setAllowedOriginPatterns("*") // This is the "Modern Wildcard"
-                .withSockJS();
+                .setAllowedOriginPatterns("*");
     }
 
     @Override
     public void configureMessageBroker(MessageBrokerRegistry registry) {
-        // The "Outbound" Lane: Messages from server -> clients (e.g., /topic/lobby/1)
         registry.enableSimpleBroker("/topic");
-        
-        // The "Inbound" Lane: Messages from client -> server (e.g., /app/join)
         registry.setApplicationDestinationPrefixes("/app");
     }
 
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
-        // Hires the "Bouncer" to check User IDs on connection
         registration.interceptors(channelInterceptor);
     }
 }

@@ -24,15 +24,23 @@ public class WebSocketChannelInterceptor implements ChannelInterceptor {
         StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
 
         if (StompCommand.CONNECT.equals(accessor.getCommand())) {
+            System.out.println("FULL HEADERS: " + accessor.getMessageHeaders());
+
             String userIdStr = accessor.getFirstNativeHeader("userId");
             String sessionId = accessor.getSessionId();
 
-            if (userIdStr != null && sessionId != null) {
-                Long userId = Long.parseLong(userIdStr);
-                sessionService.pair(sessionId, userId);
-                System.out.println("Mapped Session: " + sessionId + " to User: " + userId);
+            if (userIdStr != null && !userIdStr.equals("undefined") && sessionId != null) {
+                    try {
+                        Long userId = Long.parseLong(userIdStr);
+                        sessionService.pair(sessionId, userId);
+                        System.out.println("SUCCESS: Mapped Session: " + sessionId + " to User: " + userId);
+                    } catch (NumberFormatException e) {
+                        System.out.println("ERROR: Received invalid userId format: " + userIdStr);
+                    }
+                } else {
+                    System.out.println("WARNING: Connection attempt without valid userId.");
+                }
             }
-        }
         return message;
     }
 }

@@ -1,27 +1,33 @@
-package ch.uzh.ifi.hase.soprafs26.websocket;
+package ch.uzh.ifi.hase.soprafs26.websocket; 
 
-import org.springframework.context.event.EventListener;
-import org.springframework.stereotype.Component;
-import org.springframework.web.socket.messaging.SessionDisconnectEvent;
-
-import ch.uzh.ifi.hase.soprafs26.service.UserService;
 import ch.uzh.ifi.hase.soprafs26.service.LobbyService;
 import ch.uzh.ifi.hase.soprafs26.service.WebSocketSessionService;
-import jakarta.transaction.Transactional;
+import ch.uzh.ifi.hase.soprafs26.service.UserService;
+
+import org.springframework.context.event.EventListener;
+import org.springframework.messaging.simp.SimpMessagingTemplate;    
+import org.springframework.stereotype.Component;
+import org.springframework.web.socket.messaging.SessionDisconnectEvent;
+import org.springframework.transaction.annotation.Transactional;
 
 @Component
 public class WebSocketEventListener {
 
     private final WebSocketSessionService sessionService;
-    private final UserService userService;
     private final LobbyService lobbyService;
+    private final UserService userService;
+    private final SimpMessagingTemplate messagingTemplate;
 
-    public WebSocketEventListener(WebSocketSessionService sessionService, UserService userService, LobbyService lobbyService) {
+    public WebSocketEventListener(
+            WebSocketSessionService sessionService, 
+            LobbyService lobbyService, 
+            UserService userService, 
+            SimpMessagingTemplate messagingTemplate) {
         this.sessionService = sessionService;
-        this.userService = userService;
         this.lobbyService = lobbyService;
+        this.userService = userService;
+        this.messagingTemplate = messagingTemplate;
     }
-
 
     @EventListener
     @Transactional 
@@ -30,14 +36,13 @@ public class WebSocketEventListener {
         Long userId = sessionService.getUserId(sessionId);
 
         if (userId != null) {
-            // 1. Remove from Lobby (Clears the Foreign Key constraint)
             lobbyService.handlePlayerDisconnect(userId);
-
-            // 2. Now it is safe to delete the User
             userService.deleteUser(userId);
-
             sessionService.remove(sessionId);
-            System.out.println("User with ID " + userId + " disconnected and was removed from the system.");
-        }
+            messagingTemplate.convertAndSend("/topic/lobby/updates", "PLAYER_LEFT");
+            System.out.println("User with ID " + userId + " disconnected and was removed from the lobby.");
+        } else {
+        System.out.println("ERROR: No User ID found in SessionService for " + sessionId);
+    }
     }
 }
