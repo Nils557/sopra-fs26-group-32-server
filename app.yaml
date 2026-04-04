@@ -1,5 +1,12 @@
-# https://cloud.google.com/appengine/docs/the-appengine-environments#comparing_high-level_features
-# https://cloud.google.com/appengine/docs/standard
-
 runtime: java17
-instance_class: F2
+instance_class: F1
+
+# We switch back to automatic, but force it to stay at exactly 1
+automatic_scaling:
+  min_instances: 1
+  max_instances: 1
+
+env_variables:
+  SPRING_SECURITY_USER_NAME: "admin"
+  SPRING_SECURITY_USER_PASSWORD: "SoPra-Group32"
+  SPRING_H2_CONSOLE_SETTINGS_WEB_ALLOW_OTHERS: "true"
