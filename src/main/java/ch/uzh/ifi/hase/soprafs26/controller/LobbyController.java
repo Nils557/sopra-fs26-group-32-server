@@ -1,6 +1,10 @@
 package ch.uzh.ifi.hase.soprafs26.controller;
 
+  import java.util.List;
+  import java.util.Map;
+
   import org.springframework.http.HttpStatus;
+  import org.springframework.web.bind.annotation.GetMapping;
   import org.springframework.web.bind.annotation.PathVariable;
   import org.springframework.web.bind.annotation.PostMapping;
   import org.springframework.web.bind.annotation.RequestBody;
@@ -11,11 +15,9 @@ package ch.uzh.ifi.hase.soprafs26.controller;
   import ch.uzh.ifi.hase.soprafs26.entity.Lobby;
   import ch.uzh.ifi.hase.soprafs26.rest.dto.LobbyGetDTO;
   import ch.uzh.ifi.hase.soprafs26.rest.dto.LobbyPostDTO;
-  import ch.uzh.ifi.hase.soprafs26.rest.mapper.DTOMapper;
-  import ch.uzh.ifi.hase.soprafs26.service.LobbyService;
   import ch.uzh.ifi.hase.soprafs26.rest.dto.LobbyStartGetDTO;
-
-  import java.util.Map;
+  import ch.uzh.ifi.hase.soprafs26.rest.mapper.DTOMapper; //ich han die zwei brucht für de waiting room
+  import ch.uzh.ifi.hase.soprafs26.service.LobbyService;
 
   @RestController
   public class LobbyController {
@@ -40,6 +42,13 @@ package ch.uzh.ifi.hase.soprafs26.controller;
       public void joinLobby(@PathVariable String code, @RequestBody Map<String, Long> body) {
           Long userId = body.get("userId");
           lobbyService.joinLobby(code, userId);
+      }
+
+      @GetMapping("/lobbies/{code}/players") //han das für waiting room brucht, bitte korrigiered falls das ned passt
+      @ResponseStatus(HttpStatus.OK)
+      @ResponseBody
+      public List<String> getPlayers(@PathVariable String code) {
+        return lobbyService.getPlayers(code);
       }
 
       @PostMapping("/lobbies/{code}/start")

@@ -1,9 +1,12 @@
 package ch.uzh.ifi.hase.soprafs26.service;
 
+  import java.util.List;
+
   import org.slf4j.Logger;
   import org.slf4j.LoggerFactory;
   import org.springframework.beans.factory.annotation.Qualifier;
   import org.springframework.http.HttpStatus;
+  import org.springframework.messaging.simp.SimpMessagingTemplate;
   import org.springframework.stereotype.Service;
   import org.springframework.transaction.annotation.Transactional;
   import org.springframework.web.server.ResponseStatusException;
@@ -13,8 +16,6 @@ package ch.uzh.ifi.hase.soprafs26.service;
   import ch.uzh.ifi.hase.soprafs26.entity.User;
   import ch.uzh.ifi.hase.soprafs26.repository.LobbyRepository;
   import ch.uzh.ifi.hase.soprafs26.repository.UserRepository;
-  import org.springframework.messaging.simp.SimpMessagingTemplate;
-  import java.util.List;
 
   @Service
   @Transactional
@@ -90,6 +91,16 @@ package ch.uzh.ifi.hase.soprafs26.service;
         );
 
       }
+      // han das für waiting room brucht bitte korrigiered falls das ned lauft so
+      public List<String> getPlayers(String lobbyCode) {
+        Lobby lobby = lobbyRepository.findByLobbyCode(lobbyCode);
+        if (lobby == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Lobby not found");
+        }
+        return lobby.getPlayers().stream()
+            .map(User::getUsername)
+            .toList();
+        }
 
       public boolean isHost(Long userId) {
           return lobbyRepository.findByPlayers_Id(userId)
