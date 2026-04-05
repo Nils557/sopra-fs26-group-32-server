@@ -124,4 +124,25 @@ package ch.uzh.ifi.hase.soprafs26.service;
           } while (lobbyRepository.findByLobbyCode(code) != null);
           return code;
       }
+
+
+      public Lobby startGame(String lobbyCode, Long hostUserId) {
+        Lobby lobby = lobbyRepository.findByLobbyCode(lobbyCode);
+
+        if (lobby == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Lobby not found");
+        }
+        if (userRepository.findById(hostUserId).isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Host user not found");
+        }
+        if (!lobby.getHostUserId().equals(hostUserId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Requester is not the host");
+        }
+        if (lobby.getStatus() == LobbyStatus.INGAME) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Game has already started");
+        }
+
+        log.debug("Game started in lobby: {}", lobbyCode);
+        return lobby;
+    }
   }

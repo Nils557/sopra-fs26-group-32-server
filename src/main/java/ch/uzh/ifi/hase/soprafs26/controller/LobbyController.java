@@ -13,6 +13,7 @@ package ch.uzh.ifi.hase.soprafs26.controller;
   import ch.uzh.ifi.hase.soprafs26.rest.dto.LobbyPostDTO;
   import ch.uzh.ifi.hase.soprafs26.rest.mapper.DTOMapper;
   import ch.uzh.ifi.hase.soprafs26.service.LobbyService;
+  import ch.uzh.ifi.hase.soprafs26.rest.dto.LobbyStartGetDTO;
 
   import java.util.Map;
 
@@ -39,5 +40,14 @@ package ch.uzh.ifi.hase.soprafs26.controller;
       public void joinLobby(@PathVariable String code, @RequestBody Map<String, Long> body) {
           Long userId = body.get("userId");
           lobbyService.joinLobby(code, userId);
+      }
+
+      @PostMapping("/lobbies/{code}/start")
+      @ResponseStatus(HttpStatus.CREATED)
+      @ResponseBody
+      public LobbyStartGetDTO startGame(@PathVariable String code, @RequestBody Map<String, Long> body) {
+         Long hostUserId = body.get("hostUserId");
+         Lobby startedLobby = lobbyService.startGame(code, hostUserId);
+         return DTOMapper.INSTANCE.convertEntityToLobbyStartGetDTO(startedLobby);
       }
   }

@@ -10,6 +10,7 @@ import ch.uzh.ifi.hase.soprafs26.rest.dto.LobbyGetDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.LobbyPostDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.UserGetDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.UserPostDTO;
+import ch.uzh.ifi.hase.soprafs26.rest.dto.LobbyStartGetDTO;
 
 /**
  * DTOMapper
@@ -49,6 +50,11 @@ public interface DTOMapper {
     @Mapping(source = "status", target = "status")
     @Mapping(source = "hostUserId", target = "hostUserId")
     LobbyGetDTO convertEntityToLobbyGetDTO(Lobby lobby);
+
+    // LobbyStartGetDTO mappings
+    @Mapping(source = "lobbyCode", target = "lobbyCode")
+    @Mapping(source = "status", target = "status")
+    LobbyStartGetDTO convertEntityToLobbyStartGetDTO(Lobby lobby);
 }
 
 
