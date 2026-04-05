@@ -64,10 +64,18 @@ package ch.uzh.ifi.hase.soprafs26.service;
 
           User user = userRepository.findById(userId)
               .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found"));
-
+          
+          //Already joined check
+          boolean alreadyJoined = lobby.getPlayers().stream()
+          .anyMatch(p -> p.getId().equals(userId));
+          if (alreadyJoined) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "User already joined this lobby");
+          }
+          
           lobby.getPlayers().add(user);
           lobbyRepository.save(lobby);
           lobbyRepository.flush();
+
       }
 
       public boolean isHost(Long userId) {
