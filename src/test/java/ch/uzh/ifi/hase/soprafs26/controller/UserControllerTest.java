@@ -30,6 +30,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import ch.uzh.ifi.hase.soprafs26.service.LobbyService;
 
 /**
  * UserControllerTest
@@ -45,6 +46,9 @@ public class UserControllerTest {
 
 	@MockitoBean
 	private UserService userService;
+
+	@MockitoBean  
+	private LobbyService lobbyService;
 
 	@Test
 	public void givenUsers_whenGetUsers_thenReturnJsonArray() throws Exception {

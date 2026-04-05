@@ -13,6 +13,8 @@ package ch.uzh.ifi.hase.soprafs26.service;
   import ch.uzh.ifi.hase.soprafs26.entity.User;
   import ch.uzh.ifi.hase.soprafs26.repository.LobbyRepository;
   import ch.uzh.ifi.hase.soprafs26.repository.UserRepository;
+  import org.springframework.messaging.simp.SimpMessagingTemplate;
+  import java.util.List;
 
   @Service
   @Transactional
@@ -22,12 +24,15 @@ package ch.uzh.ifi.hase.soprafs26.service;
 
       private final LobbyRepository lobbyRepository;
       private final UserRepository userRepository;
+      private final SimpMessagingTemplate messagingTemplate;
 
       public LobbyService(@Qualifier("lobbyRepository") LobbyRepository lobbyRepository,
-                          @Qualifier("userRepository") UserRepository userRepository) {
-          this.lobbyRepository = lobbyRepository;
-          this.userRepository = userRepository;
-      }
+                        @Qualifier("userRepository") UserRepository userRepository,
+                        SimpMessagingTemplate messagingTemplate) { 
+        this.lobbyRepository = lobbyRepository;
+        this.userRepository = userRepository;
+        this.messagingTemplate = messagingTemplate; 
+    }
 
       public Lobby createLobby(Lobby newLobby) {
           if (userRepository.findById(newLobby.getHostUserId()).isEmpty()) {
@@ -71,10 +76,18 @@ package ch.uzh.ifi.hase.soprafs26.service;
           if (alreadyJoined) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "User already joined this lobby");
           }
-          
+
           lobby.getPlayers().add(user);
           lobbyRepository.save(lobby);
           lobbyRepository.flush();
+
+          List<String> usernames = lobby.getPlayers().stream()
+            .map(User::getUsername)
+            .toList();
+          messagingTemplate.convertAndSend(
+            "/topic/lobby/" + lobbyCode + "/players",
+            usernames
+        );
 
       }
 
