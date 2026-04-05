@@ -35,7 +35,7 @@ package ch.uzh.ifi.hase.soprafs26.controller;
       }
 
       @PostMapping("/lobbies/{code}/players")
-      @ResponseStatus(HttpStatus.OK)
+      @ResponseStatus(HttpStatus.CREATED)
       public void joinLobby(@PathVariable String code, @RequestBody Map<String, Long> body) {
           Long userId = body.get("userId");
           lobbyService.joinLobby(code, userId);
