@@ -16,6 +16,7 @@ package ch.uzh.ifi.hase.soprafs26.service;
   import ch.uzh.ifi.hase.soprafs26.entity.User;
   import ch.uzh.ifi.hase.soprafs26.repository.LobbyRepository;
   import ch.uzh.ifi.hase.soprafs26.repository.UserRepository;
+  import ch.uzh.ifi.hase.soprafs26.rest.mapper.DTOMapper;
 
   @Service
   @Transactional
@@ -152,6 +153,19 @@ package ch.uzh.ifi.hase.soprafs26.service;
         if (lobby.getStatus() == LobbyStatus.INGAME) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Game has already started");
         }
+
+        if (lobby.getPlayers().size() < 2) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Fewer than 2 players in lobby");
+        }
+
+        
+        lobby.setStatus(LobbyStatus.INGAME);
+        lobby = lobbyRepository.save(lobby);
+        lobbyRepository.flush();
+
+        messagingTemplate.convertAndSend(
+            "/topic/lobby/" + lobbyCode + "/start",
+            DTOMapper.INSTANCE.convertEntityToLobbyStartGetDTO(lobby));
 
         log.debug("Game started in lobby: {}", lobbyCode);
         return lobby;

@@ -12,6 +12,7 @@ import ch.uzh.ifi.hase.soprafs26.rest.dto.UserGetDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.UserPostDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.LobbyStartGetDTO;
 
+
 /**
  * DTOMapper
  * This class is responsible for generating classes that will automatically
