@@ -46,7 +46,8 @@ public class WebSecurityConfig {
         configuration.setAllowedOrigins(Arrays.asList(
             "http://localhost:3000",
             "https://sopra-fs26-group-32-client.oa.r.appspot.com",
-            "https://sopra-fs26-group-32-server.oa.r.appspot.com" 
+            "https://sopra-fs26-group-32-server.oa.r.appspot.com",
+            "https://sopra-fs26-group-32-client.vercel.app"  
         ));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(Collections.singletonList("*"));
