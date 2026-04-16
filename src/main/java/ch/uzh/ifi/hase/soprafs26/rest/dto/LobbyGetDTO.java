@@ -9,6 +9,7 @@ public class LobbyGetDTO {
     private int totalRounds;
     private LobbyStatus status;
     private Long hostUserId;
+    private String hostUsername;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -27,4 +28,7 @@ public class LobbyGetDTO {
 
     public Long getHostUserId() { return hostUserId; }
     public void setHostUserId(Long hostUserId) { this.hostUserId = hostUserId; }
+
+    public String getHostUsername() { return hostUsername; }
+    public void setHostUsername(String hostUsername) { this.hostUsername = hostUsername; }
 }
