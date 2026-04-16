@@ -25,31 +25,32 @@ public class WebSecurityConfig {
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
             .csrf(csrf -> csrf.disable())
-            .headers(headers -> headers.frameOptions(frameOptions -> frameOptions.sameOrigin()))
+            .cors(Customizer.withDefaults())
+            .headers(headers -> headers
+                .frameOptions(frameOptions -> frameOptions.disable())
+            )
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/users/**", "/lobbies/**").permitAll() 
+                .requestMatchers("/users/**", "/lobbies/**").permitAll()
                 .requestMatchers("/h2-console/**").permitAll()
                 .requestMatchers("/ws/**").permitAll()
-                .anyRequest().authenticated()      
+                .anyRequest().authenticated()
             )
-            .httpBasic(Customizer.withDefaults()); 
+            .httpBasic(Customizer.withDefaults());
 
         return http.build();
     }
+
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        
         configuration.setAllowedOrigins(Arrays.asList(
             "http://localhost:3000",
             "https://sopra-fs26-group-32-client.oa.r.appspot.com"
         ));
-        
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(Collections.singletonList("*")); 
+        configuration.setAllowedHeaders(Collections.singletonList("*"));
         configuration.setExposedHeaders(Arrays.asList("Authorization", "x-auth-token"));
         configuration.setAllowCredentials(true);
-
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
         return source;
