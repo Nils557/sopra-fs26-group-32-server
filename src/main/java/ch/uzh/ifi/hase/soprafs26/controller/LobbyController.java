@@ -13,9 +13,11 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import ch.uzh.ifi.hase.soprafs26.entity.Lobby;
+import ch.uzh.ifi.hase.soprafs26.entity.User;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.LobbyGetDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.LobbyPostDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.LobbyStartGetDTO;
+import ch.uzh.ifi.hase.soprafs26.rest.dto.UserGetDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.mapper.DTOMapper;
 import ch.uzh.ifi.hase.soprafs26.service.LobbyService;
 
@@ -46,9 +48,11 @@ public class LobbyController {
 
     @PostMapping("/lobbies/{code}/players")
     @ResponseStatus(HttpStatus.CREATED)
-    public void joinLobby(@PathVariable String code, @RequestBody Map<String, Long> body) {
+    @ResponseBody
+    public UserGetDTO joinLobby(@PathVariable String code, @RequestBody Map<String, Long> body) {
         Long userId = body.get("userId");
-        lobbyService.joinLobby(code, userId);
+        User user = lobbyService.joinLobby(code, userId);
+        return DTOMapper.INSTANCE.convertEntityToUserGetDTO(user);
     }
 
     @GetMapping("/lobbies/{code}/players")

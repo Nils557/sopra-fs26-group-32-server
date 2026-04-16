@@ -67,7 +67,7 @@ public class LobbyService {
         return dto;
     }
 
-    public void joinLobby(String lobbyCode, Long userId) {
+    public User joinLobby(String lobbyCode, Long userId) {
         Lobby lobby = lobbyRepository.findByLobbyCode(lobbyCode);
 
         if (lobby == null) {
@@ -98,6 +98,7 @@ public class LobbyService {
                 "/topic/lobby/" + lobbyCode + "/players",
                 usernames
         );
+        return user;
     }
 
     public List<String> getPlayers(String lobbyCode) {
@@ -125,7 +126,7 @@ public class LobbyService {
             if (userId.equals(lobby.getHostUserId())) {
                 lobbyRepository.delete(lobby);
                 lobbyRepository.flush();
-                messagingTemplate.convertAndSend("/topic/lobby/updates", "HOST_DISCONNECTED");
+                messagingTemplate.convertAndSend("/topic/lobby/" + lobbyCode + "/disconnect", "HOST_DISCONNECTED");
             } else {
                 lobby.getPlayers().removeIf(p -> p.getId().equals(userId));
                 lobbyRepository.save(lobby);
