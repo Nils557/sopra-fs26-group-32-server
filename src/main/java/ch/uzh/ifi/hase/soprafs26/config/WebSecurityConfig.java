@@ -40,28 +40,18 @@ public class WebSecurityConfig {
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
-        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-
-        // H2 console: allow any origin so it can be opened directly in a browser
-        CorsConfiguration h2Config = new CorsConfiguration();
-        h2Config.addAllowedOriginPattern("*");
-        h2Config.setAllowedMethods(Arrays.asList("GET", "POST", "OPTIONS"));
-        h2Config.addAllowedHeader("*");
-        source.registerCorsConfiguration("/h2-console/**", h2Config);
-
-        // API: restrict to known front-end origins
-        CorsConfiguration apiConfig = new CorsConfiguration();
-        apiConfig.setAllowedOrigins(Arrays.asList(
+        CorsConfiguration configuration = new CorsConfiguration();
+        configuration.setAllowedOrigins(Arrays.asList(
             "http://localhost:3000",
             "https://sopra-fs26-group-32-client.oa.r.appspot.com",
             "https://sopra-fs26-group-32-client.vercel.app"
         ));
-        apiConfig.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        apiConfig.setAllowedHeaders(Collections.singletonList("*"));
-        apiConfig.setExposedHeaders(Arrays.asList("Authorization", "x-auth-token"));
-        apiConfig.setAllowCredentials(true);
-        source.registerCorsConfiguration("/**", apiConfig);
-
+        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        configuration.setAllowedHeaders(Collections.singletonList("*"));
+        configuration.setExposedHeaders(Arrays.asList("Authorization", "x-auth-token"));
+        configuration.setAllowCredentials(true);
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
         return source;
     }
 }
