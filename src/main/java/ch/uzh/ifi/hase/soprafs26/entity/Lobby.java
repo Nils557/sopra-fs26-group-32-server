@@ -39,7 +39,7 @@ public class Lobby implements Serializable {
     @Column(nullable = false)
     private Long hostUserId;
 
-    @OneToMany(fetch = FetchType.EAGER)
+    @OneToMany(fetch = FetchType.LAZY)
     private List<User> players = new ArrayList<>();
 
     // Getters and Setters ONLY

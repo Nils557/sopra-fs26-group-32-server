@@ -1,6 +1,7 @@
 runtime: java17
-instance_class: F2
+instance_class: F1
 
+# We switch back to automatic, but force it to stay at exactly 1
 automatic_scaling:
   min_instances: 1
   max_instances: 1
@@ -8,10 +9,4 @@ automatic_scaling:
 env_variables:
   SPRING_SECURITY_USER_NAME: "admin"
   SPRING_SECURITY_USER_PASSWORD: "SoPra-Group32"
-  SPRING_DATASOURCE_URL: "jdbc:postgresql://db.wuarcbmddngqzuzveoka.supabase.co:5432/postgres"
-  SPRING_DATASOURCE_USERNAME: "postgres"
-  SPRING_DATASOURCE_PASSWORD: "SoPra-Group32"
-  SPRING_DATASOURCE_DRIVER_CLASS_NAME: "org.postgresql.Driver"
-  SPRING_JPA_DATABASE_PLATFORM: "org.hibernate.dialect.PostgreSQLDialect"
-  SPRING_JPA_HIBERNATE_DDL_AUTO: "update"
-  SPRING_H2_CONSOLE_ENABLED: "false"
+  SPRING_H2_CONSOLE_SETTINGS_WEB_ALLOW_OTHERS: "true"
