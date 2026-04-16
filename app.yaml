@@ -1,5 +1,5 @@
 runtime: java17
-instance_class: F1
+instance_class: F2
 
 # We switch back to automatic, but force it to stay at exactly 1
 automatic_scaling:
@@ -11,3 +11,4 @@ env_variables:
   SPRING_SECURITY_USER_PASSWORD: "SoPra-Group32"
   #SPRING_H2_CONSOLE_SETTINGS_WEB_ALLOW_OTHERS: "true"
   SPRING_PROFILES_ACTIVE: "production"
+  JAVA_TOOL_OPTIONS: "-Xms128m -Xmx400m"
