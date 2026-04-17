@@ -8,15 +8,19 @@ import org.springframework.messaging.support.ChannelInterceptor;
 import org.springframework.messaging.support.MessageHeaderAccessor;
 import org.springframework.stereotype.Component;
 
+import ch.uzh.ifi.hase.soprafs26.service.DisconnectGraceService;
 import ch.uzh.ifi.hase.soprafs26.service.WebSocketSessionService;
 
 @Component
 public class WebSocketChannelInterceptor implements ChannelInterceptor {
 
     private final WebSocketSessionService sessionService;
+    private final DisconnectGraceService graceService;
 
-    public WebSocketChannelInterceptor(WebSocketSessionService sessionService) {
+    public WebSocketChannelInterceptor(WebSocketSessionService sessionService,
+                                       DisconnectGraceService graceService) {
         this.sessionService = sessionService;
+        this.graceService = graceService;
     }
 
     @Override
@@ -33,6 +37,8 @@ public class WebSocketChannelInterceptor implements ChannelInterceptor {
             try {
                 Long userId = Long.parseLong(userIdStr);
                 sessionService.pair(sessionId, userId);
+                // Cancel a pending disconnect — this is a page refresh, not a real leave.
+                graceService.cancel(userId);
             } catch (NumberFormatException e) {
                 // invalid userId format, skip pairing
             }
