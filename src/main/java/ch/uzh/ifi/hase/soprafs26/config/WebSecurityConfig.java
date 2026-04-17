@@ -31,10 +31,6 @@ public class WebSecurityConfig {
                 .requestMatchers("/users/**", "/lobbies/**").permitAll()
                 .requestMatchers("/h2-console/**").permitAll()
                 .requestMatchers("/ws/**").permitAll()
-                // Spring forwards unhandled exceptions to /error; if it's not permitAll
-                // the response is a bare 401 with no CORS headers, which browsers
-                // surface as "No Access-Control-Allow-Origin" on the original request.
-                .requestMatchers("/error").permitAll()
                 .anyRequest().authenticated()
             )
             .httpBasic(Customizer.withDefaults());

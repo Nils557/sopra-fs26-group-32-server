@@ -1,6 +1,5 @@
 package ch.uzh.ifi.hase.soprafs26.websocket;
 
-import ch.uzh.ifi.hase.soprafs26.service.DisconnectGraceService;
 import ch.uzh.ifi.hase.soprafs26.service.LobbyService;
 import ch.uzh.ifi.hase.soprafs26.service.WebSocketSessionService;
 import org.springframework.context.event.EventListener;
@@ -12,14 +11,10 @@ public class WebSocketEventListener {
 
     private final WebSocketSessionService sessionService;
     private final LobbyService lobbyService;
-    private final DisconnectGraceService graceService;
 
-    public WebSocketEventListener(WebSocketSessionService sessionService,
-                                  LobbyService lobbyService,
-                                  DisconnectGraceService graceService) {
+    public WebSocketEventListener(WebSocketSessionService sessionService, LobbyService lobbyService) {
         this.sessionService = sessionService;
         this.lobbyService = lobbyService;
-        this.graceService = graceService;
     }
 
     @EventListener
@@ -27,11 +22,8 @@ public class WebSocketEventListener {
         String sessionId = event.getSessionId();
         Long userId = sessionService.getUserId(sessionId);
         sessionService.remove(sessionId);
-        if (userId == null) return;
-
-        // Don't fire the disconnect yet — a page refresh closes and reopens the
-        // WebSocket within ~1-2s. Only act if no reconnect happens within the grace period.
-        final Long uid = userId;
-        graceService.scheduleDisconnect(uid, () -> lobbyService.handlePlayerDisconnect(uid));
+        if (userId != null) {
+            lobbyService.handlePlayerDisconnect(userId);
+        }
     }
 }
