@@ -119,24 +119,36 @@ public class LobbyService {
 
     @Transactional
     public void handlePlayerDisconnect(Long userId) {
-        Lobby lobby = lobbyRepository.findByPlayers_Id(userId).orElse(null);
+        lobbyRepository.findByPlayers_Id(userId).ifPresent(lobby -> removePlayer(lobby, userId));
+    }
 
-        if (lobby != null) {
-            String lobbyCode = lobby.getLobbyCode();
-            if (userId.equals(lobby.getHostUserId())) {
-                lobbyRepository.delete(lobby);
-                lobbyRepository.flush();
-                messagingTemplate.convertAndSend("/topic/lobby/" + lobbyCode + "/disconnect", "HOST_DISCONNECTED");
-            } else {
-                lobby.getPlayers().removeIf(p -> p.getId().equals(userId));
-                lobbyRepository.save(lobby);
-                lobbyRepository.flush();
+    public void leaveLobby(String lobbyCode, Long userId) {
+        Lobby lobby = lobbyRepository.findByLobbyCode(lobbyCode);
+        if (lobby == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Lobby not found");
+        }
+        boolean inLobby = lobby.getPlayers().stream().anyMatch(p -> p.getId().equals(userId));
+        if (!inLobby) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Player not in this lobby");
+        }
+        removePlayer(lobby, userId);
+    }
 
-                List<String> usernames = lobby.getPlayers().stream()
-                        .map(User::getUsername)
-                        .toList();
-                messagingTemplate.convertAndSend("/topic/lobby/" + lobbyCode + "/players", usernames);
-            }
+    private void removePlayer(Lobby lobby, Long userId) {
+        String lobbyCode = lobby.getLobbyCode();
+        if (userId.equals(lobby.getHostUserId())) {
+            lobbyRepository.delete(lobby);
+            lobbyRepository.flush();
+            messagingTemplate.convertAndSend("/topic/lobby/" + lobbyCode + "/disconnect", "HOST_DISCONNECTED");
+        } else {
+            lobby.getPlayers().removeIf(p -> p.getId().equals(userId));
+            lobbyRepository.save(lobby);
+            lobbyRepository.flush();
+
+            List<String> usernames = lobby.getPlayers().stream()
+                    .map(User::getUsername)
+                    .toList();
+            messagingTemplate.convertAndSend("/topic/lobby/" + lobbyCode + "/players", usernames);
         }
     }
 

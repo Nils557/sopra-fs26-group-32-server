@@ -1,9 +1,9 @@
 package ch.uzh.ifi.hase.soprafs26.controller;
 
 import java.util.List;
-import java.util.Map;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -15,8 +15,10 @@ import org.springframework.web.bind.annotation.RestController;
 import ch.uzh.ifi.hase.soprafs26.entity.Lobby;
 import ch.uzh.ifi.hase.soprafs26.entity.User;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.LobbyGetDTO;
+import ch.uzh.ifi.hase.soprafs26.rest.dto.LobbyJoinRequestDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.LobbyPostDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.LobbyStartGetDTO;
+import ch.uzh.ifi.hase.soprafs26.rest.dto.LobbyStartRequestDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.UserGetDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.mapper.DTOMapper;
 import ch.uzh.ifi.hase.soprafs26.service.LobbyService;
@@ -49,9 +51,8 @@ public class LobbyController {
     @PostMapping("/lobbies/{code}/players")
     @ResponseStatus(HttpStatus.CREATED)
     @ResponseBody
-    public UserGetDTO joinLobby(@PathVariable String code, @RequestBody Map<String, Long> body) {
-        Long userId = body.get("userId");
-        User user = lobbyService.joinLobby(code, userId);
+    public UserGetDTO joinLobby(@PathVariable String code, @RequestBody LobbyJoinRequestDTO body) {
+        User user = lobbyService.joinLobby(code, body.getUserId());
         return DTOMapper.INSTANCE.convertEntityToUserGetDTO(user);
     }
 
@@ -62,12 +63,17 @@ public class LobbyController {
         return lobbyService.getPlayers(code);
     }
 
+    @DeleteMapping("/lobbies/{code}/players/{userId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void leaveLobby(@PathVariable String code, @PathVariable Long userId) {
+        lobbyService.leaveLobby(code, userId);
+    }
+
     @PostMapping("/lobbies/{code}/start")
     @ResponseStatus(HttpStatus.CREATED)
     @ResponseBody
-    public LobbyStartGetDTO startGame(@PathVariable String code, @RequestBody Map<String, Long> body) {
-        Long hostUserId = body.get("hostUserId");
-        Lobby startedLobby = lobbyService.startGame(code, hostUserId);
+    public LobbyStartGetDTO startGame(@PathVariable String code, @RequestBody LobbyStartRequestDTO body) {
+        Lobby startedLobby = lobbyService.startGame(code, body.getHostUserId());
         return DTOMapper.INSTANCE.convertEntityToLobbyStartGetDTO(startedLobby);
     }
 }
