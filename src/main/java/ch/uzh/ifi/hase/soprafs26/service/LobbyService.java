@@ -37,18 +37,18 @@ public class LobbyService {
     }
 
     public Lobby createLobby(Lobby newLobby) {
-        if (userRepository.findById(newLobby.getHostUserId()).isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Host user not found");
-        }
+        User host = userRepository.findById(newLobby.getHostUserId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Host user not found"));
         if (newLobby.getTotalRounds() < 1 || newLobby.getTotalRounds() > 10) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Rounds must be between 1 and 10");
         }
-        if (newLobby.getMaxPlayers() < 2) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Max players must be at least 2");
+        if (newLobby.getMaxPlayers() < 2 || newLobby.getMaxPlayers() > 10) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Max players must be between 2 and 10");
         }
 
         newLobby.setLobbyCode(generateLobbyCode());
         newLobby.setStatus(LobbyStatus.WAITING);
+        newLobby.getPlayers().add(host);
         newLobby = lobbyRepository.save(newLobby);
         lobbyRepository.flush();
 
