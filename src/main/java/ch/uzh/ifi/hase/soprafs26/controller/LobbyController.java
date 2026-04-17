@@ -3,7 +3,6 @@ package ch.uzh.ifi.hase.soprafs26.controller;
 import java.util.List;
 
 import org.springframework.http.HttpStatus;
-import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -61,12 +60,6 @@ public class LobbyController {
     @ResponseBody
     public List<String> getPlayers(@PathVariable String code) {
         return lobbyService.getPlayers(code);
-    }
-
-    @DeleteMapping("/lobbies/{code}/players/{userId}")
-    @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void leaveLobby(@PathVariable String code, @PathVariable Long userId) {
-        lobbyService.leaveLobby(code, userId);
     }
 
     @PostMapping("/lobbies/{code}/start")

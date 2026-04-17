@@ -122,18 +122,6 @@ public class LobbyService {
         lobbyRepository.findByPlayers_Id(userId).ifPresent(lobby -> removePlayer(lobby, userId));
     }
 
-    public void leaveLobby(String lobbyCode, Long userId) {
-        Lobby lobby = lobbyRepository.findByLobbyCode(lobbyCode);
-        if (lobby == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Lobby not found");
-        }
-        boolean inLobby = lobby.getPlayers().stream().anyMatch(p -> p.getId().equals(userId));
-        if (!inLobby) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Player not in this lobby");
-        }
-        removePlayer(lobby, userId);
-    }
-
     private void removePlayer(Lobby lobby, Long userId) {
         String lobbyCode = lobby.getLobbyCode();
         if (userId.equals(lobby.getHostUserId())) {
