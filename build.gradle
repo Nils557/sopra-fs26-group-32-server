@@ -41,6 +41,7 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-h2console'
     implementation 'org.springframework.boot:spring-boot-starter-security'
     implementation 'org.springframework.boot:spring-boot-starter-websocket'
+    implementation 'com.fasterxml.jackson.core:jackson-databind'
     developmentOnly 'org.springframework.boot:spring-boot-devtools'
     // H2 for local development and tests
     runtimeOnly 'com.h2database:h2'

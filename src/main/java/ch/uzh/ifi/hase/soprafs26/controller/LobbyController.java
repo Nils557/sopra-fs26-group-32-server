@@ -18,18 +18,41 @@ import ch.uzh.ifi.hase.soprafs26.rest.dto.LobbyJoinRequestDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.LobbyPostDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.LobbyStartGetDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.LobbyStartRequestDTO;
+import ch.uzh.ifi.hase.soprafs26.rest.dto.MapillaryGetDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.UserGetDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.mapper.DTOMapper;
 import ch.uzh.ifi.hase.soprafs26.service.LobbyService;
+import ch.uzh.ifi.hase.soprafs26.service.MapillaryService;
 
 @RestController
 public class LobbyController {
 
     private final LobbyService lobbyService;
 
-    LobbyController(LobbyService lobbyService) {
+    // ----------------------------------------------------
+    // TEMPORARY TEST ENDPOINT - DELETE BEFORE FINAL RELEASE!
+    // ----------------------------------------------------
+
+    private final MapillaryService mapillaryService; 
+
+    LobbyController(LobbyService lobbyService, MapillaryService mapillaryService) {
         this.lobbyService = lobbyService;
+        this.mapillaryService = mapillaryService;
     }
+
+
+    @GetMapping("/test-mapillary")
+    @ResponseStatus(HttpStatus.OK)
+    public MapillaryGetDTO testMapillaryGCP() {
+        // Fetch a random image from Zurich
+        return mapillaryService.getRandomImage(8.538, 47.376, 8.542, 47.380);
+    }
+
+    // ----------------------END ------------------------------ 
+
+    /* LobbyController(LobbyService lobbyService) {
+        this.lobbyService = lobbyService;
+    } */
 
     @PostMapping("/lobbies")
     @ResponseStatus(HttpStatus.CREATED)
