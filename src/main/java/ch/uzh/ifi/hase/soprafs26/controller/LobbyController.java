@@ -28,21 +28,9 @@ import ch.uzh.ifi.hase.soprafs26.service.RoundService;
 public class LobbyController {
 
     private final LobbyService lobbyService;
-    private final RoundService roundService; // <-- Add this
 
     LobbyController(LobbyService lobbyService, RoundService roundService) {
         this.lobbyService = lobbyService;
-        this.roundService = roundService;
-    }
-
-    // ----------------------------------------------------
-    // TEMPORARY TEST ENDPOINT - DELETE BEFORE FINAL RELEASE!
-    // ----------------------------------------------------
-    @GetMapping("/test-round")
-    @ResponseStatus(HttpStatus.OK)
-    public Round testRoundCreation() {
-        // Simulates the host starting a game for a lobby named "TEST-1234"
-        return roundService.createAndStartRound("TEST-1234");
     }
 
     @PostMapping("/lobbies")
