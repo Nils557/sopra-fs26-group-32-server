@@ -12,26 +12,38 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import ch.uzh.ifi.hase.soprafs26.entity.Lobby;
+import ch.uzh.ifi.hase.soprafs26.entity.Round;
 import ch.uzh.ifi.hase.soprafs26.entity.User;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.LobbyGetDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.LobbyJoinRequestDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.LobbyPostDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.LobbyStartGetDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.LobbyStartRequestDTO;
-import ch.uzh.ifi.hase.soprafs26.rest.dto.MapillaryGetDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.UserGetDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.mapper.DTOMapper;
 import ch.uzh.ifi.hase.soprafs26.service.LobbyService;
-import ch.uzh.ifi.hase.soprafs26.service.MapillaryService;
+import ch.uzh.ifi.hase.soprafs26.service.RoundService;
 
 @RestController
 public class LobbyController {
 
     private final LobbyService lobbyService;
+    private final RoundService roundService; // <-- Add this
 
-    LobbyController(LobbyService lobbyService) {
+    LobbyController(LobbyService lobbyService, RoundService roundService) {
         this.lobbyService = lobbyService;
-    } 
+        this.roundService = roundService;
+    }
+
+    // ----------------------------------------------------
+    // TEMPORARY TEST ENDPOINT - DELETE BEFORE FINAL RELEASE!
+    // ----------------------------------------------------
+    @GetMapping("/test-round")
+    @ResponseStatus(HttpStatus.OK)
+    public Round testRoundCreation() {
+        // Simulates the host starting a game for a lobby named "TEST-1234"
+        return roundService.createAndStartRound("TEST-1234");
+    }
 
     @PostMapping("/lobbies")
     @ResponseStatus(HttpStatus.CREATED)
