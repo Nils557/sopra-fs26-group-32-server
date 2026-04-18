@@ -29,30 +29,9 @@ public class LobbyController {
 
     private final LobbyService lobbyService;
 
-    // ----------------------------------------------------
-    // TEMPORARY TEST ENDPOINT - DELETE BEFORE FINAL RELEASE!
-    // ----------------------------------------------------
-
-    private final MapillaryService mapillaryService; 
-
-    LobbyController(LobbyService lobbyService, MapillaryService mapillaryService) {
+    LobbyController(LobbyService lobbyService) {
         this.lobbyService = lobbyService;
-        this.mapillaryService = mapillaryService;
-    }
-
-
-    @GetMapping("/test-mapillary")
-    @ResponseStatus(HttpStatus.OK)
-    public MapillaryGetDTO testMapillaryGCP() {
-        // Fetch a random image from Zurich
-        return mapillaryService.getRandomImage(8.538, 47.376, 8.542, 47.380);
-    }
-
-    // ----------------------END ------------------------------ 
-
-    /* LobbyController(LobbyService lobbyService) {
-        this.lobbyService = lobbyService;
-    } */
+    } 
 
     @PostMapping("/lobbies")
     @ResponseStatus(HttpStatus.CREATED)
