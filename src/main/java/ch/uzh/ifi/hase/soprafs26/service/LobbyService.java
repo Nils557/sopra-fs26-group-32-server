@@ -27,13 +27,16 @@ public class LobbyService {
     private final LobbyRepository lobbyRepository;
     private final UserRepository userRepository;
     private final SimpMessagingTemplate messagingTemplate;
+    private final RoundService roundService;
 
     public LobbyService(@Qualifier("lobbyRepository") LobbyRepository lobbyRepository,
                         @Qualifier("userRepository") UserRepository userRepository,
-                        SimpMessagingTemplate messagingTemplate) {
+                        SimpMessagingTemplate messagingTemplate,
+                        RoundService roundService) {
         this.lobbyRepository = lobbyRepository;
         this.userRepository = userRepository;
         this.messagingTemplate = messagingTemplate;
+        this.roundService = roundService;
     }
 
     public Lobby createLobby(Lobby newLobby) {
@@ -175,6 +178,7 @@ public class LobbyService {
         lobby.setStatus(LobbyStatus.INGAME);
         lobby = lobbyRepository.save(lobby);
         lobbyRepository.flush();
+        roundService.startRoundWithTimer(lobbyCode);
 
         messagingTemplate.convertAndSend(
                 "/topic/lobby/" + lobbyCode + "/start",

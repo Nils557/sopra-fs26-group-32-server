@@ -10,10 +10,18 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import jakarta.annotation.PostConstruct;
+
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.Map;
 import java.util.List;
 import java.util.Random;
 
@@ -25,6 +33,9 @@ public class RoundService {
     private final MapillaryService mapillaryService;
     private final Random random;
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final SimpMessagingTemplate messagingTemplate;
+    private final Map<String, ScheduledFuture<?>> activeTimers = new ConcurrentHashMap<>();
+    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(4);
 
     // This list will hold all 200+ coordinates in memory for instant access
     private List<CuratedLocation> locationsDataset = new ArrayList<>();
@@ -54,9 +65,10 @@ public class RoundService {
     }
 
     @Autowired
-    public RoundService(RoundRepository roundRepository, MapillaryService mapillaryService) {
+    public RoundService(RoundRepository roundRepository, MapillaryService mapillaryService, SimpMessagingTemplate messagingTemplate) {
         this.roundRepository = roundRepository;
         this.mapillaryService = mapillaryService;
+        this.messagingTemplate = messagingTemplate;
         this.random = new Random();
     }
 
@@ -132,4 +144,52 @@ public Round createAndStartRound(String lobbyCode) {
             return null; // Return null to signal this specific attempt failed
         }
     }
+
+    public Round startRoundWithTimer(String lobbyCode) {
+        Round round = createAndStartRound(lobbyCode);
+        List<String> images = round.getImageSequence();
+
+        // Send first image immediately
+        messagingTemplate.convertAndSend(
+            "/topic/lobby/" + lobbyCode + "/image",
+            new ImageBroadcastMessage(images.get(0), 0)
+        );
+
+        // Schedule remaining images every 9 seconds
+        final int[] index = {1};
+        ScheduledFuture<?> future = scheduler.scheduleAtFixedRate(() -> {
+            if (index[0] < images.size()) {
+                messagingTemplate.convertAndSend(
+                    "/topic/lobby/" + lobbyCode + "/image",
+                    new ImageBroadcastMessage(images.get(index[0]), index[0])
+                );
+                index[0]++;
+        } else {
+            stopTimer(lobbyCode);
+        }
+    }, 9, 9, TimeUnit.SECONDS);
+
+    activeTimers.put(lobbyCode, future);
+    return round;   
+    }
+
+    public void stopTimer(String lobbyCode) {
+        ScheduledFuture<?> future = activeTimers.remove(lobbyCode);
+            if (future != null) {
+                future.cancel(false);
+                System.out.println("Timer stopped for lobby: " + lobbyCode);
+            }
+    }
+    
+    public static class ImageBroadcastMessage {
+        public final String imageUrl;
+        public final int index;
+
+        public ImageBroadcastMessage(String imageUrl, int index) {
+            this.imageUrl = imageUrl;
+            this.index = index;
+        }
+    }
+
 }
+
