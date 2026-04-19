@@ -167,16 +167,13 @@ public Round createAndStartRound(String lobbyCode) {
     // Schedule remaining images every 9 seconds
     final int[] index = {1};
     ScheduledFuture<?> future = scheduler.scheduleAtFixedRate(() -> {
-        if (index[0] < images.size()) {
-            messagingTemplate.convertAndSend(
-                "/topic/game/" + lobbyCode + "/image",
-                new ImageBroadcastMessage(images.get(index[0]), index[0], roundNumber, totalRounds, 45)
-            );
-            index[0]++;
-        } else {
-            stopTimer(lobbyCode);
-        }
-    }, 9, 9, TimeUnit.SECONDS);
+    if (index[0] < images.size()) {
+        broadcastImage(lobbyCode, images.get(index[0]), index[0], roundNumber, totalRounds);
+        index[0]++;
+    } else {
+        stopTimer(lobbyCode);
+    }
+}, 9, 9, TimeUnit.SECONDS);
 
     activeTimers.put(lobbyCode, future);
     return round;
@@ -188,6 +185,12 @@ public Round createAndStartRound(String lobbyCode) {
                 future.cancel(false);
                 System.out.println("Timer stopped for lobby: " + lobbyCode);
             }
+    }
+    public void broadcastImage(String lobbyCode, String imageUrl, int index, int roundNumber, int totalRounds) {
+    messagingTemplate.convertAndSend(
+        "/topic/game/" + lobbyCode + "/image",
+        new ImageBroadcastMessage(imageUrl, index, roundNumber, totalRounds, 45)
+    );
     }
     
     public static class ImageBroadcastMessage {
