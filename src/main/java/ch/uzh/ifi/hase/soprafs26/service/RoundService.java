@@ -19,6 +19,9 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
+import ch.uzh.ifi.hase.soprafs26.repository.LobbyRepository;
+import ch.uzh.ifi.hase.soprafs26.entity.Lobby;
+
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Map;
@@ -36,6 +39,7 @@ public class RoundService {
     private final SimpMessagingTemplate messagingTemplate;
     private final Map<String, ScheduledFuture<?>> activeTimers = new ConcurrentHashMap<>();
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(4);
+    private final LobbyRepository lobbyRepository;
 
     // This list will hold all 200+ coordinates in memory for instant access
     private List<CuratedLocation> locationsDataset = new ArrayList<>();
@@ -65,10 +69,11 @@ public class RoundService {
     }
 
     @Autowired
-    public RoundService(RoundRepository roundRepository, MapillaryService mapillaryService, SimpMessagingTemplate messagingTemplate) {
+    public RoundService(RoundRepository roundRepository, MapillaryService mapillaryService, SimpMessagingTemplate messagingTemplate, LobbyRepository lobbyRepository) {
         this.roundRepository = roundRepository;
         this.mapillaryService = mapillaryService;
         this.messagingTemplate = messagingTemplate;
+        this.lobbyRepository = lobbyRepository;
         this.random = new Random();
     }
 
@@ -146,32 +151,36 @@ public Round createAndStartRound(String lobbyCode) {
     }
 
     public Round startRoundWithTimer(String lobbyCode) {
-        Round round = createAndStartRound(lobbyCode);
-        List<String> images = round.getImageSequence();
+    Round round = createAndStartRound(lobbyCode);
+    List<String> images = round.getImageSequence();
 
-        // Send first image immediately
-        messagingTemplate.convertAndSend(
-            "/topic/lobby/" + lobbyCode + "/image",
-            new ImageBroadcastMessage(images.get(0), 0)
-        );
+    Lobby lobby = lobbyRepository.findByLobbyCode(lobbyCode);
+    int totalRounds = lobby != null ? lobby.getTotalRounds() : 1;
+    int roundNumber = roundRepository.findByLobbyCode(lobbyCode).size();
 
-        // Schedule remaining images every 9 seconds
-        final int[] index = {1};
-        ScheduledFuture<?> future = scheduler.scheduleAtFixedRate(() -> {
-            if (index[0] < images.size()) {
-                messagingTemplate.convertAndSend(
-                    "/topic/lobby/" + lobbyCode + "/image",
-                    new ImageBroadcastMessage(images.get(index[0]), index[0])
-                );
-                index[0]++;
+    // Send first image immediately
+    messagingTemplate.convertAndSend(
+        "/topic/game/" + lobbyCode + "/image",
+        new ImageBroadcastMessage(images.get(0), 0, roundNumber, totalRounds, 45)
+    );
+
+    // Schedule remaining images every 9 seconds
+    final int[] index = {1};
+    ScheduledFuture<?> future = scheduler.scheduleAtFixedRate(() -> {
+        if (index[0] < images.size()) {
+            messagingTemplate.convertAndSend(
+                "/topic/game/" + lobbyCode + "/image",
+                new ImageBroadcastMessage(images.get(index[0]), index[0], roundNumber, totalRounds, 45)
+            );
+            index[0]++;
         } else {
             stopTimer(lobbyCode);
         }
     }, 9, 9, TimeUnit.SECONDS);
 
     activeTimers.put(lobbyCode, future);
-    return round;   
-    }
+    return round;
+}
 
     public void stopTimer(String lobbyCode) {
         ScheduledFuture<?> future = activeTimers.remove(lobbyCode);
@@ -184,10 +193,16 @@ public Round createAndStartRound(String lobbyCode) {
     public static class ImageBroadcastMessage {
         public final String imageUrl;
         public final int index;
+        public final int roundNumber;
+        public final int totalRounds;
+        public final int timeLeft;
 
-        public ImageBroadcastMessage(String imageUrl, int index) {
+        public ImageBroadcastMessage(String imageUrl, int index, int roundNumber, int totalRounds, int timeLeft) {
             this.imageUrl = imageUrl;
             this.index = index;
+            this.roundNumber = roundNumber;
+            this.totalRounds = totalRounds;
+            this.timeLeft = timeLeft;
         }
     }
 
