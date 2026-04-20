@@ -186,6 +186,13 @@ public Round createAndStartRound(String lobbyCode) {
                 System.out.println("Timer stopped for lobby: " + lobbyCode);
             }
     }
+
+    public void cleanupLobby(String lobbyCode) {
+        List<Round> rounds = roundRepository.findByLobbyCode(lobbyCode);
+        if (!rounds.isEmpty()) {
+            roundRepository.deleteAll(rounds);
+        }
+    }
     public void broadcastImage(String lobbyCode, String imageUrl, int index, int roundNumber, int totalRounds) {
     messagingTemplate.convertAndSend(
         "/topic/game/" + lobbyCode + "/image",

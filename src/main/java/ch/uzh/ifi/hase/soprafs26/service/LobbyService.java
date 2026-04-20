@@ -128,6 +128,13 @@ public class LobbyService {
     private void removePlayer(Lobby lobby, Long userId) {
         String lobbyCode = lobby.getLobbyCode();
         if (userId.equals(lobby.getHostUserId())) {
+            // Remove any Round rows tied to this lobby before the lobby is deleted —
+            // Round.lobbyCode has no FK, so Hibernate won't cascade them on its own.
+            roundService.cleanupLobby(lobbyCode);
+            // Explicitly clear the join-table rows first so no lobby_players.players_id
+            // references survive to block the subsequent User delete on Postgres.
+            lobby.getPlayers().clear();
+            lobbyRepository.saveAndFlush(lobby);
             lobbyRepository.delete(lobby);
             lobbyRepository.flush();
             messagingTemplate.convertAndSend("/topic/lobby/" + lobbyCode + "/disconnect", "HOST_DISCONNECTED");
