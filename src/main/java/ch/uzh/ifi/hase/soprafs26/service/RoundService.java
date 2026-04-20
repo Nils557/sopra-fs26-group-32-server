@@ -150,6 +150,16 @@ public Round createAndStartRound(String lobbyCode) {
         }
     }
 
+    public void startRoundWithTimerAsync(String lobbyCode) {
+        scheduler.execute(() -> {
+            try {
+                startRoundWithTimer(lobbyCode);
+            } catch (Exception e) {
+                System.err.println("Round bootstrap failed for lobby " + lobbyCode + ": " + e.getMessage());
+            }
+        });
+    }
+
     public Round startRoundWithTimer(String lobbyCode) {
     Round round = createAndStartRound(lobbyCode);
     List<String> images = round.getImageSequence();

@@ -185,11 +185,16 @@ public class LobbyService {
         lobby.setStatus(LobbyStatus.INGAME);
         lobby = lobbyRepository.save(lobby);
         lobbyRepository.flush();
-        roundService.startRoundWithTimer(lobbyCode);
 
+        // Broadcast /start before kicking off the round so every client
+        // navigates to /game/{code} and subscribes to /topic/game/{code}/image
+        // BEFORE image[0] is sent. The Mapillary work then runs on the
+        // scheduler pool so this HTTP handler returns immediately.
         messagingTemplate.convertAndSend(
                 "/topic/lobby/" + lobbyCode + "/start",
                 DTOMapper.INSTANCE.convertEntityToLobbyStartGetDTO(lobby));
+        roundService.startRoundWithTimerAsync(lobbyCode);
+
         log.debug("Game started in lobby: {}", lobbyCode);
         return lobby;
     }
