@@ -76,4 +76,41 @@ public class UserServiceTest {
 		assertThrows(ResponseStatusException.class, () -> userService.createUser(testUser));
 	}
 
+	/**
+	 * US1 #56 — Username validation.
+	 * The service must reject blank usernames with HTTP 400 BAD_REQUEST
+	 * before ever reaching the database. This guards the not-null + unique
+	 * constraints on User.username and gives the client a deterministic
+	 * error message instead of a constraint-violation stack trace.
+	 */
+	@Test
+	public void createUser_blankUsername_throwsBadRequest() {
+		// given a user with an empty username
+		User blank = new User();
+		blank.setUsername("");
+
+		// when / then — createUser should throw 400 BAD_REQUEST
+		ResponseStatusException ex = assertThrows(
+				ResponseStatusException.class,
+				() -> userService.createUser(blank));
+		assertEquals(400, ex.getStatusCode().value());
+	}
+
+	/**
+	 * US1 #56 — Username validation (null variant).
+	 * Same contract as the blank case: null usernames are rejected with 400.
+	 */
+	@Test
+	public void createUser_nullUsername_throwsBadRequest() {
+		// given a user with a null username
+		User nullName = new User();
+		nullName.setUsername(null);
+
+		// when / then
+		ResponseStatusException ex = assertThrows(
+				ResponseStatusException.class,
+				() -> userService.createUser(nullName));
+		assertEquals(400, ex.getStatusCode().value());
+	}
+
 }
