@@ -180,14 +180,14 @@ public Round createAndStartRound(String lobbyCode) {
         // Send first image immediately
         messagingTemplate.convertAndSend(
             "/topic/game/" + lobbyCode + "/image",
-            new ImageBroadcastMessage(images.get(0), 0, roundNumber, totalRounds, 45)
+            new ImageBroadcastMessage(round.getId(), images.get(0), 0, roundNumber, totalRounds, 45)
         );
 
         // Schedule remaining images every 9 seconds
         final int[] index = {1};
         ScheduledFuture<?> future = scheduler.scheduleAtFixedRate(() -> {
             if (index[0] < images.size()) {
-                broadcastImage(lobbyCode, images.get(index[0]), index[0], roundNumber, totalRounds);
+                broadcastImage(lobbyCode, round.getId(), images.get(index[0]), index[0], roundNumber, totalRounds);
                 index[0]++;
             } else {
                 stopTimer(lobbyCode);
@@ -252,10 +252,10 @@ public Round createAndStartRound(String lobbyCode) {
             roundRepository.deleteAll(rounds);
         }
     }
-    public void broadcastImage(String lobbyCode, String imageUrl, int index, int roundNumber, int totalRounds) {
+    public void broadcastImage(String lobbyCode, Long roundId, String imageUrl, int index, int roundNumber, int totalRounds) {
         messagingTemplate.convertAndSend(
             "/topic/game/" + lobbyCode + "/image",
-            new ImageBroadcastMessage(imageUrl, index, roundNumber, totalRounds, 45)
+            new ImageBroadcastMessage(roundId, imageUrl, index, roundNumber, totalRounds, 45)
         );
     }
     
@@ -265,8 +265,10 @@ public Round createAndStartRound(String lobbyCode) {
         public final int roundNumber;
         public final int totalRounds;
         public final int timeLeft;
+        public final Long roundId;
 
-        public ImageBroadcastMessage(String imageUrl, int index, int roundNumber, int totalRounds, int timeLeft) {
+        public ImageBroadcastMessage(Long roundId, String imageUrl, int index, int roundNumber, int totalRounds, int timeLeft) {
+            this.roundId = roundId;
             this.imageUrl = imageUrl;
             this.index = index;
             this.roundNumber = roundNumber;
