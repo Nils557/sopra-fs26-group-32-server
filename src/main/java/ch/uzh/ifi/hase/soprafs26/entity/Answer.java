@@ -3,6 +3,7 @@ package ch.uzh.ifi.hase.soprafs26.entity;
 import jakarta.persistence.*;
 import java.time.Instant;
 import ch.uzh.ifi.hase.soprafs26.constant.ScoreResult;
+import ch.uzh.ifi.hase.soprafs26.util.DistanceCalculator;
 
 @Entity
 @Table(name = "ANSWER")
@@ -58,4 +59,18 @@ public class Answer {
     
     public User getPlayer() { return player; }
     public void setPlayer(User player) { this.player = player; }
+
+    @Transient 
+    public double getDistanceToTargetInKm() {
+        if (this.round == null) {
+            return 0.0;
+        }
+        
+        return DistanceCalculator.calculateDistanceInKm(
+            this.latitude, 
+            this.longitude, 
+            this.round.getTargetLatitude(), 
+            this.round.getTargetLongitude()
+        );
+    }
 }
