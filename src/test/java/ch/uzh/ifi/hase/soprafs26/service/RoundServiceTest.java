@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -32,8 +33,11 @@ import org.springframework.web.server.ResponseStatusException;
 
 import ch.uzh.ifi.hase.soprafs26.entity.Lobby;
 import ch.uzh.ifi.hase.soprafs26.entity.Round;
+import ch.uzh.ifi.hase.soprafs26.repository.AnswerRepository;
 import ch.uzh.ifi.hase.soprafs26.repository.LobbyRepository;
 import ch.uzh.ifi.hase.soprafs26.repository.RoundRepository;
+import ch.uzh.ifi.hase.soprafs26.repository.UserRepository;
+
 
 /**
  * Unit tests for RoundService.
@@ -70,6 +74,12 @@ public class RoundServiceTest {
 
     @Mock
     private LobbyRepository lobbyRepository;
+
+    @Mock
+    private AnswerRepository answerRepository;
+
+    @Mock
+    private UserRepository userRepository;
 
     @InjectMocks
     private RoundService roundService;
@@ -426,11 +436,14 @@ public class RoundServiceTest {
         r2.setLobbyCode("AB-1234");
         List<Round> rounds = Arrays.asList(r1, r2);
         when(roundRepository.findByLobbyCode("AB-1234")).thenReturn(rounds);
+        when(answerRepository.findByRoundId(any())).thenReturn(new ArrayList<>());
+
 
         // when
         roundService.cleanupLobby("AB-1234");
 
         // then — deleteAll was invoked with exactly those rounds
+        verify(answerRepository, times(2)).deleteAll(anyList());
         verify(roundRepository).deleteAll(rounds);
     }
 
