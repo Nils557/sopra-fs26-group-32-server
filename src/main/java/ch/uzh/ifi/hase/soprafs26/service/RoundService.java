@@ -286,6 +286,7 @@ public Round createAndStartRound(String lobbyCode) {
         answer.setPlayer(player);
         answer.setSubmittedAt(Instant.now());
         answer.setPointsAwarded(0); // Scored evaluated at round end (S9)
+        answer.calculateScoreBasedOnDistance();
         answer = answerRepository.save(answer);
 
         // Notify lobby via WebSocket (Real-Time UI Update for S11)
