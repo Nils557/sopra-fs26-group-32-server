@@ -45,6 +45,7 @@ public class RoundService {
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final SimpMessagingTemplate messagingTemplate;
     private final Map<String, ScheduledFuture<?>> activeTimers = new ConcurrentHashMap<>();
+    private final Map<String, ScheduledFuture<?>> activeCountdownTimers = new ConcurrentHashMap<>();
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(4);
     private final LobbyRepository lobbyRepository;
     private final UserRepository UserRepository;
@@ -194,7 +195,47 @@ public Round createAndStartRound(String lobbyCode) {
         }, 9, 9, TimeUnit.SECONDS);
 
         activeTimers.put(lobbyCode, future);
+        startCountdownTimer(lobbyCode, round);
         return round;
+    }
+
+    private void startCountdownTimer(String lobbyCode, Round round) {
+        final int[] timeLeft = {45};
+    
+        ScheduledFuture<?> countdownFuture = scheduler.scheduleAtFixedRate(() -> {
+            timeLeft[0]--;
+            
+            //#112 — Broadcast timer tick
+            messagingTemplate.convertAndSend(
+                "/topic/game/" + lobbyCode + "/timer",
+                timeLeft[0]
+            );
+        
+            //#110 — Round ends when timer reaches zero
+            if (timeLeft[0] <= 0) {
+                stopCountdownTimer(lobbyCode);
+                stopTimer(lobbyCode);
+                round.setFinished(true);
+                roundRepository.save(round);
+            
+            // Broadcast round end event
+            messagingTemplate.convertAndSend(
+                "/topic/game/" + lobbyCode + "/roundEnd",
+                "ROUND_ENDED"
+            );
+            System.out.println("Round ended for lobby: " + lobbyCode);
+            }
+            }, 1, 1, TimeUnit.SECONDS);
+    
+            activeCountdownTimers.put(lobbyCode, countdownFuture);
+    }
+
+    public void stopCountdownTimer(String lobbyCode) {
+        ScheduledFuture<?> future = activeCountdownTimers.remove(lobbyCode);
+            if (future != null) {
+                future.cancel(false);
+                System.out.println("Countdown timer stopped for lobby: " + lobbyCode);
+        }
     }
 
     public void stopTimer(String lobbyCode) {
