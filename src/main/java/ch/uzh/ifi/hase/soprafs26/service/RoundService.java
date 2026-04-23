@@ -249,6 +249,7 @@ public Round createAndStartRound(String lobbyCode) {
     public void cleanupLobby(String lobbyCode) {
         List<Round> rounds = roundRepository.findByLobbyCode(lobbyCode);
         if (!rounds.isEmpty()) {
+            rounds.forEach(r -> answerRepository.deleteAll(answerRepository.findByRoundId(r.getId())));
             roundRepository.deleteAll(rounds);
         }
     }
