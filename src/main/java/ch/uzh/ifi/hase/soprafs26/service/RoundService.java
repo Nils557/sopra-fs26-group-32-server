@@ -20,13 +20,20 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 import ch.uzh.ifi.hase.soprafs26.repository.LobbyRepository;
+import ch.uzh.ifi.hase.soprafs26.repository.UserRepository;
 import ch.uzh.ifi.hase.soprafs26.entity.Lobby;
+import ch.uzh.ifi.hase.soprafs26.entity.User;
+import ch.uzh.ifi.hase.soprafs26.rest.dto.AnswerPostDTO;
+import ch.uzh.ifi.hase.soprafs26.entity.Answer;
+import ch.uzh.ifi.hase.soprafs26.repository.AnswerRepository;
 
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Map;
 import java.util.List;
 import java.util.Random;
+import java.time.Instant;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional
@@ -40,6 +47,8 @@ public class RoundService {
     private final Map<String, ScheduledFuture<?>> activeTimers = new ConcurrentHashMap<>();
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(4);
     private final LobbyRepository lobbyRepository;
+    private final UserRepository UserRepository;
+    private final AnswerRepository answerRepository;
 
     // This list will hold all 200+ coordinates in memory for instant access
     private List<CuratedLocation> locationsDataset = new ArrayList<>();
@@ -69,11 +78,13 @@ public class RoundService {
     }
 
     @Autowired
-    public RoundService(RoundRepository roundRepository, MapillaryService mapillaryService, SimpMessagingTemplate messagingTemplate, LobbyRepository lobbyRepository) {
+    public RoundService(RoundRepository roundRepository, MapillaryService mapillaryService, SimpMessagingTemplate messagingTemplate, LobbyRepository lobbyRepository, UserRepository UserRepository, AnswerRepository answerRepository) {
         this.roundRepository = roundRepository;
         this.mapillaryService = mapillaryService;
         this.messagingTemplate = messagingTemplate;
         this.lobbyRepository = lobbyRepository;
+        this.UserRepository = UserRepository;
+        this.answerRepository = answerRepository;
         this.random = new Random();
     }
 
@@ -111,9 +122,6 @@ public Round createAndStartRound(String lobbyCode) {
             System.out.println("Attempt " + attempt + " failed for " + selectedLocation.getName() + ". Retrying...");
         }
 
-        // --------------------------------------------------------
-        // FINAL FAIL-SAFE: The "Zurich Fallback"
-        // --------------------------------------------------------
         System.out.println("All random attempts failed. Triggering Zurich Fallback...");
         
         // Zurich HB coordinates are guaranteed to have thousands of Mapillary images
@@ -161,33 +169,33 @@ public Round createAndStartRound(String lobbyCode) {
     }
 
     public Round startRoundWithTimer(String lobbyCode) {
-    Round round = createAndStartRound(lobbyCode);
-    List<String> images = round.getImageSequence();
+        Round round = createAndStartRound(lobbyCode);
+        List<String> images = round.getImageSequence();
 
-    Lobby lobby = lobbyRepository.findByLobbyCode(lobbyCode);
-    int totalRounds = lobby != null ? lobby.getTotalRounds() : 1;
-    int roundNumber = roundRepository.findByLobbyCode(lobbyCode).size();
+        Lobby lobby = lobbyRepository.findByLobbyCode(lobbyCode);
+        int totalRounds = lobby != null ? lobby.getTotalRounds() : 1;
+        int roundNumber = roundRepository.findByLobbyCode(lobbyCode).size();
 
-    // Send first image immediately
-    messagingTemplate.convertAndSend(
-        "/topic/game/" + lobbyCode + "/image",
-        new ImageBroadcastMessage(images.get(0), 0, roundNumber, totalRounds, 45)
-    );
+        // Send first image immediately
+        messagingTemplate.convertAndSend(
+            "/topic/game/" + lobbyCode + "/image",
+            new ImageBroadcastMessage(images.get(0), 0, roundNumber, totalRounds, 45)
+        );
 
-    // Schedule remaining images every 9 seconds
-    final int[] index = {1};
-    ScheduledFuture<?> future = scheduler.scheduleAtFixedRate(() -> {
-    if (index[0] < images.size()) {
-        broadcastImage(lobbyCode, images.get(index[0]), index[0], roundNumber, totalRounds);
-        index[0]++;
-    } else {
-        stopTimer(lobbyCode);
+        // Schedule remaining images every 9 seconds
+        final int[] index = {1};
+        ScheduledFuture<?> future = scheduler.scheduleAtFixedRate(() -> {
+            if (index[0] < images.size()) {
+                broadcastImage(lobbyCode, images.get(index[0]), index[0], roundNumber, totalRounds);
+                index[0]++;
+            } else {
+                stopTimer(lobbyCode);
+            }
+        }, 9, 9, TimeUnit.SECONDS);
+
+        activeTimers.put(lobbyCode, future);
+        return round;
     }
-}, 9, 9, TimeUnit.SECONDS);
-
-    activeTimers.put(lobbyCode, future);
-    return round;
-}
 
     public void stopTimer(String lobbyCode) {
         ScheduledFuture<?> future = activeTimers.remove(lobbyCode);
@@ -204,10 +212,10 @@ public Round createAndStartRound(String lobbyCode) {
         }
     }
     public void broadcastImage(String lobbyCode, String imageUrl, int index, int roundNumber, int totalRounds) {
-    messagingTemplate.convertAndSend(
-        "/topic/game/" + lobbyCode + "/image",
-        new ImageBroadcastMessage(imageUrl, index, roundNumber, totalRounds, 45)
-    );
+        messagingTemplate.convertAndSend(
+            "/topic/game/" + lobbyCode + "/image",
+            new ImageBroadcastMessage(imageUrl, index, roundNumber, totalRounds, 45)
+        );
     }
     
     public static class ImageBroadcastMessage {
@@ -226,5 +234,69 @@ public Round createAndStartRound(String lobbyCode) {
         }
     }
 
-}
+    public static class AnswerState {
+        public final Long playerId;
+        public final String username;
+        public final Boolean answered;
+        public AnswerState(Long playerId, String username, Boolean answered) {
+            this.playerId = playerId;
+            this.username = username;
+            this.answered = answered;
+        }
+    }
 
+    public Answer submitAnswer(String lobbyCode, Long roundId, Long playerId, Double latitude, Double longitude) {
+        // Validate Coordinates
+        if (playerId == null || latitude == null || longitude == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Payload missing vital fields");
+        }
+        if (latitude < -90.0 || latitude > 90.0 || longitude < -180.0 || longitude > 180.0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Coordinates out of bounds.");
+        }
+
+        Lobby lobby = lobbyRepository.findByLobbyCode(lobbyCode);
+        if (lobby == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Lobby not found");
+        }
+
+        Round round = roundRepository.findById(roundId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Round not found"));
+
+        if (!round.getLobbyCode().equals(lobbyCode)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Round does not belong to this lobby");
+        }
+
+        if (round.isFinished()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Round has already finished");
+        }
+
+        User player = UserRepository.findById(playerId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Player not found"));
+
+        boolean alreadyAnswered = answerRepository.existsByRoundIdAndPlayerId(roundId, playerId);
+        if (alreadyAnswered) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Player has already submitted an answer");
+        }
+
+        // Save new answer
+        Answer answer = new Answer();
+        answer.setLatitude(latitude);
+        answer.setLongitude(longitude);
+        answer.setRound(round);
+        answer.setPlayer(player);
+        answer.setSubmittedAt(Instant.now());
+        answer.setPointsAwarded(0); // Scored evaluated at round end (S9)
+        answer = answerRepository.save(answer);
+
+        // Notify lobby via WebSocket (Real-Time UI Update for S11)
+        List<Answer> roundAnswers = answerRepository.findByRoundId(roundId);
+        List<AnswerState> states = roundAnswers.stream()
+            .map(a -> new AnswerState(a.getPlayer().getId(), a.getPlayer().getUsername(), true))
+            .collect(Collectors.toList());
+            
+        messagingTemplate.convertAndSend("/topic/lobby/" + lobbyCode + "/answers", states);
+
+        return answer;
+    }
+
+}

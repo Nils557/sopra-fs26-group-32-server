@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 import ch.uzh.ifi.hase.soprafs26.entity.Lobby;
 import ch.uzh.ifi.hase.soprafs26.entity.Round;
 import ch.uzh.ifi.hase.soprafs26.entity.User;
+import ch.uzh.ifi.hase.soprafs26.rest.dto.AnswerPostDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.LobbyGetDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.LobbyJoinRequestDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.LobbyPostDTO;
@@ -23,14 +25,18 @@ import ch.uzh.ifi.hase.soprafs26.rest.dto.UserGetDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.mapper.DTOMapper;
 import ch.uzh.ifi.hase.soprafs26.service.LobbyService;
 import ch.uzh.ifi.hase.soprafs26.service.RoundService;
+import ch.uzh.ifi.hase.soprafs26.entity.Answer;
+import ch.uzh.ifi.hase.soprafs26.rest.dto.AnswerGetDTO;
 
 @RestController
 public class LobbyController {
 
     private final LobbyService lobbyService;
+    private final RoundService roundService;
 
     LobbyController(LobbyService lobbyService, RoundService roundService) {
         this.lobbyService = lobbyService;
+        this.roundService = roundService;
     }
 
     @PostMapping("/lobbies")
@@ -71,4 +77,18 @@ public class LobbyController {
         Lobby startedLobby = lobbyService.startGame(code, body.getHostUserId());
         return DTOMapper.INSTANCE.convertEntityToLobbyStartGetDTO(startedLobby);
     }
+
+    @PostMapping("/lobbies/{code}/rounds/{roundId}/answers")
+    @ResponseStatus(HttpStatus.CREATED)
+    @ResponseBody
+    public AnswerGetDTO submitAnswer(@PathVariable String code, 
+                                     @PathVariable Long roundId,
+                                     @RequestBody AnswerPostDTO answerPostDTO) {
+                                         
+        Answer answer = roundService.submitAnswer(code, roundId, 
+            answerPostDTO.getPlayerId(), answerPostDTO.getLatitude(), answerPostDTO.getLongitude());
+            
+        return DTOMapper.INSTANCE.convertEntityToAnswerGetDTO(answer);
+    }
+
 }

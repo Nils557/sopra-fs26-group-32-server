@@ -11,6 +11,9 @@ import ch.uzh.ifi.hase.soprafs26.rest.dto.LobbyPostDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.UserGetDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.UserPostDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.LobbyStartGetDTO;
+import ch.uzh.ifi.hase.soprafs26.entity.Answer;
+import ch.uzh.ifi.hase.soprafs26.rest.dto.AnswerGetDTO;
+import ch.uzh.ifi.hase.soprafs26.rest.dto.AnswerPostDTO;
 
 
 /**
@@ -56,6 +59,18 @@ public interface DTOMapper {
     @Mapping(source = "lobbyCode", target = "lobbyCode")
     @Mapping(source = "status", target = "status")
     LobbyStartGetDTO convertEntityToLobbyStartGetDTO(Lobby lobby);
+
+    @Mapping(source = "latitude", target = "latitude")
+    @Mapping(source = "longitude", target = "longitude")
+    Answer convertAnswerPostDTOtoEntity(AnswerPostDTO answerPostDTO);
+
+    @Mapping(source = "id", target = "id")
+    @Mapping(source = "latitude", target = "latitude")
+    @Mapping(source = "longitude", target = "longitude")
+    @Mapping(source = "scoreResult", target = "scoreResult")
+    @Mapping(source = "pointsAwarded", target = "pointsAwarded")
+    @Mapping(source = "submittedAt", target = "submittedAt")
+    AnswerGetDTO convertEntityToAnswerGetDTO(Answer answer);
 }
 
 

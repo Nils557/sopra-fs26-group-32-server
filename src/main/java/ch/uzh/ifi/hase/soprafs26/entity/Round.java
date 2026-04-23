@@ -3,6 +3,7 @@ package ch.uzh.ifi.hase.soprafs26.entity;
 import jakarta.persistence.*;
 import java.util.ArrayList;
 import java.util.List;
+import java.time.Instant;
 
 @Entity
 @Table(name = "GAME_ROUND") // "Round" is often a reserved SQL keyword, renaming table to be safe
@@ -20,6 +21,12 @@ public class Round {
     @Column(nullable = false)
     private double targetLongitude;
 
+    @Column(nullable = false)
+    private boolean finished = false;
+
+    @Column
+    private Instant startedAt;
+
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "ROUND_IMAGES", joinColumns = @JoinColumn(name = "round_id"))
     @Column(name = "image_url", length = 1000) // URLs can be long
@@ -36,4 +43,8 @@ public class Round {
     public void setTargetLongitude(double targetLongitude) { this.targetLongitude = targetLongitude; }
     public List<String> getImageSequence() { return imageSequence; }
     public void setImageSequence(List<String> imageSequence) { this.imageSequence = imageSequence; }
+    public boolean isFinished() { return finished; }
+    public void setFinished(boolean finished) { this.finished = finished; }
+    public Instant getStartedAt() { return startedAt; }
+    public void setStartedAt(Instant startedAt) { this.startedAt = startedAt; }
 }
