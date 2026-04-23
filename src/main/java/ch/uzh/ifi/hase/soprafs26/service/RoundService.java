@@ -338,6 +338,25 @@ public Round createAndStartRound(String lobbyCode) {
             
         messagingTemplate.convertAndSend("/topic/lobby/" + lobbyCode + "/answers", states);
 
+        //#111 — Early round end if all players have answered
+        Lobby lobby2 = lobbyRepository.findByLobbyCode(lobbyCode);
+            if (lobby2 != null) {
+                int totalPlayers = lobby2.getPlayers().size();
+                int answeredPlayers = answerRepository.findByRoundId(roundId).size();
+    
+            if (answeredPlayers >= totalPlayers) {
+                stopCountdownTimer(lobbyCode);
+                stopTimer(lobbyCode);
+                round.setFinished(true);
+                roundRepository.save(round);
+                messagingTemplate.convertAndSend(
+            "/topic/game/" + lobbyCode + "/roundEnd",
+            "ROUND_ENDED"
+            );
+            System.out.println("Early round end for lobby: " + lobbyCode);
+        }
+    }
+
         return answer;
     }
 
