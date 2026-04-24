@@ -105,7 +105,7 @@ public class RoundService {
         }
     }
 
-public Round createAndStartRound(String lobbyCode) {
+    public Round createAndStartRound(String lobbyCode) {
         if (locationsDataset.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "No locations available to start the round.");
         }
@@ -114,50 +114,56 @@ public Round createAndStartRound(String lobbyCode) {
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             CuratedLocation selectedLocation = locationsDataset.get(random.nextInt(locationsDataset.size()));
             
-            // Try our luck with a random city
-            Round round = tryCreateRound(lobbyCode, selectedLocation.getLatitude(), selectedLocation.getLongitude(), 0.04);
-            if (round != null) {
+            try {
+                // Try our luck with a random city
+                Round round = tryCreateRound(lobbyCode, selectedLocation.getLatitude(), selectedLocation.getLongitude(), 0.03);
+                
+                // If we get here, no exception was thrown, meaning success!
                 System.out.println("Game started in: " + selectedLocation.getName());
                 return round;
+
+            } catch (Exception e) {
+                // This replaces your old line 124. 
+                // We capture Mapillary's exact complaint and print it before the loop restarts.
+                String apiError = e.getMessage();
+                System.out.println("Attempt " + attempt + " failed for " + selectedLocation.getName() + 
+                                ". API Reason: " + apiError + " | Retrying...");
             }
-            
-            System.out.println("Attempt " + attempt + " failed for " + selectedLocation.getName() + ". Retrying...");
         }
 
         System.out.println("All random attempts failed. Triggering Zurich Fallback...");
         
-        // Zurich HB coordinates are guaranteed to have thousands of Mapillary images
-        Round fallbackRound = tryCreateRound(lobbyCode, 47.3769, 8.5417, 0.005);
-        
-        if (fallbackRound != null) {
+        try {
+            // Zurich HB coordinates are guaranteed to have thousands of Mapillary images
+            Round fallbackRound = tryCreateRound(lobbyCode, 47.3769, 8.5417, 0.005);
             System.out.println("Fail-safe successful: Game started in Zurich.");
             return fallbackRound;
-        }
 
-        // If even Zurich fails, the Mapillary API is likely down or the token is expired
-        throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, 
-            "Mapillary API is unreachable or returned no images even for fallback locations.");
+        } catch (Exception e) {
+            // If even Zurich fails, we finally stop the code and tell the frontend.
+            String finalError = e.getMessage();
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, 
+                "Mapillary API is unreachable or returned no images. Final API error: " + finalError);
+        }
     }
 
     /**
      * Helper method to reduce code duplication
      */
     private Round tryCreateRound(String lobbyCode, double lat, double lon, double delta) {
-        try {
-            List<String> imageUrls = mapillaryService.getImageSequence(
-                    lon - delta, lat - delta, 
-                    lon + delta, lat + delta, 
-                    5);
+        // No try-catch here anymore! Let the exception bubble up.
+        List<String> imageUrls = mapillaryService.getImageSequence(
+                lon - delta, lat - delta, 
+                lon + delta, lat + delta, 
+                5);
 
-            Round round = new Round();
-            round.setLobbyCode(lobbyCode);
-            round.setTargetLatitude(lat);
-            round.setTargetLongitude(lon);
-            round.setImageSequence(imageUrls);
-            return roundRepository.save(round);
-        } catch (Exception e) {
-            return null; // Return null to signal this specific attempt failed
-        }
+        Round round = new Round();
+        round.setLobbyCode(lobbyCode);
+        round.setTargetLatitude(lat);
+        round.setTargetLongitude(lon);
+        round.setImageSequence(imageUrls);
+        
+        return roundRepository.save(round);
     }
 
     public void startRoundWithTimerAsync(String lobbyCode) {
