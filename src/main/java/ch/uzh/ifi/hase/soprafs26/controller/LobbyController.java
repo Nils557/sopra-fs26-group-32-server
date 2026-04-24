@@ -11,11 +11,13 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 import ch.uzh.ifi.hase.soprafs26.entity.Lobby;
 import ch.uzh.ifi.hase.soprafs26.entity.Round;
 import ch.uzh.ifi.hase.soprafs26.entity.User;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.AnswerPostDTO;
+import ch.uzh.ifi.hase.soprafs26.rest.dto.CurrentRoundDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.LobbyGetDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.LobbyJoinRequestDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.LobbyPostDTO;
@@ -81,14 +83,25 @@ public class LobbyController {
     @PostMapping("/lobbies/{code}/rounds/{roundId}/answers")
     @ResponseStatus(HttpStatus.CREATED)
     @ResponseBody
-    public AnswerGetDTO submitAnswer(@PathVariable String code, 
+    public AnswerGetDTO submitAnswer(@PathVariable String code,
                                      @PathVariable Long roundId,
                                      @RequestBody AnswerPostDTO answerPostDTO) {
-                                         
-        Answer answer = roundService.submitAnswer(code, roundId, 
+
+        Answer answer = roundService.submitAnswer(code, roundId,
             answerPostDTO.getPlayerId(), answerPostDTO.getLatitude(), answerPostDTO.getLongitude());
-            
+
         return DTOMapper.INSTANCE.convertEntityToAnswerGetDTO(answer);
+    }
+
+    @GetMapping("/lobbies/{code}/rounds/current")
+    @ResponseStatus(HttpStatus.OK)
+    @ResponseBody
+    public CurrentRoundDTO getCurrentRound(@PathVariable String code) {
+        CurrentRoundDTO dto = roundService.getCurrentRoundSnapshot(code);
+        if (dto == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No active round");
+        }
+        return dto;
     }
 
 }
