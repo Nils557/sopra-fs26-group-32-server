@@ -115,7 +115,7 @@ public Round createAndStartRound(String lobbyCode) {
             CuratedLocation selectedLocation = locationsDataset.get(random.nextInt(locationsDataset.size()));
             
             // Try our luck with a random city
-            Round round = tryCreateRound(lobbyCode, selectedLocation.getLatitude(), selectedLocation.getLongitude(), 0.04);
+            Round round = tryCreateRound(lobbyCode, selectedLocation.getLatitude(), selectedLocation.getLongitude(), 0.01);
             if (round != null) {
                 System.out.println("Game started in: " + selectedLocation.getName());
                 return round;
