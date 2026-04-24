@@ -105,7 +105,7 @@ public class RoundService {
         }
     }
 
-    public Round createAndStartRound(String lobbyCode) {
+public Round createAndStartRound(String lobbyCode) {
         if (locationsDataset.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "No locations available to start the round.");
         }
@@ -114,15 +114,17 @@ public class RoundService {
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             CuratedLocation selectedLocation = locationsDataset.get(random.nextInt(locationsDataset.size()));
             
-            // Try our luck with a random city
-            Round round = tryCreateRound(lobbyCode, selectedLocation.getLatitude(), selectedLocation.getLongitude(), 0.01);
-            if (round != null) {
+            // MISSING TRY BLOCK ADDED HERE
+            try { 
+                // Try our luck with a random city
+                Round round = tryCreateRound(lobbyCode, selectedLocation.getLatitude(), selectedLocation.getLongitude(), 0.01);
+                
+                // If the line above doesn't throw an error, it succeeded!
                 System.out.println("Game started in: " + selectedLocation.getName());
                 return round;
 
             } catch (Exception e) {
-                // This replaces your old line 124. 
-                // We capture Mapillary's exact complaint and print it before the loop restarts.
+                // If tryCreateRound fails, it jumps directly here
                 String apiError = e.getMessage();
                 System.out.println("Attempt " + attempt + " failed for " + selectedLocation.getName() + 
                                 ". API Reason: " + apiError + " | Retrying...");
