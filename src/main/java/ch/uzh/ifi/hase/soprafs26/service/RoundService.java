@@ -25,7 +25,6 @@ import ch.uzh.ifi.hase.soprafs26.repository.UserRepository;
 import ch.uzh.ifi.hase.soprafs26.entity.Lobby;
 import ch.uzh.ifi.hase.soprafs26.entity.User;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.AnswerPostDTO;
-import ch.uzh.ifi.hase.soprafs26.rest.dto.CurrentRoundDTO;
 import ch.uzh.ifi.hase.soprafs26.entity.Answer;
 import ch.uzh.ifi.hase.soprafs26.repository.AnswerRepository;
 
@@ -48,8 +47,6 @@ public class RoundService {
     private final SimpMessagingTemplate messagingTemplate;
     private final Map<String, ScheduledFuture<?>> activeTimers = new ConcurrentHashMap<>();
     private final Map<String, ScheduledFuture<?>> activeCountdownTimers = new ConcurrentHashMap<>();
-    private final Map<String, Integer> currentImageIndex = new ConcurrentHashMap<>();
-    private final Map<String, Integer> currentTimeLeft = new ConcurrentHashMap<>();
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(4);
     private final LobbyRepository lobbyRepository;
     private final UserRepository UserRepository;
@@ -169,21 +166,6 @@ public Round createAndStartRound(String lobbyCode) {
                 startRoundWithTimer(lobbyCode);
             } catch (Exception e) {
                 System.err.println("Round bootstrap failed for lobby " + lobbyCode + ": " + e.getMessage());
-                // Surface the failure so clients don't sit forever on "Wait for the first round...".
-                // Reset lobby to WAITING so the host can retry without recreating it.
-                try {
-                    Lobby lobby = lobbyRepository.findByLobbyCode(lobbyCode);
-                    if (lobby != null) {
-                        lobby.setStatus(LobbyStatus.WAITING);
-                        lobbyRepository.save(lobby);
-                    }
-                } catch (Exception inner) {
-                    System.err.println("Failed to reset lobby after bootstrap error: " + inner.getMessage());
-                }
-                messagingTemplate.convertAndSend(
-                    "/topic/game/" + lobbyCode + "/status",
-                    "START_FAILED"
-                );
             }
         });
     }
@@ -196,11 +178,6 @@ public Round createAndStartRound(String lobbyCode) {
         int totalRounds = lobby != null ? lobby.getTotalRounds() : 1;
         int roundNumber = roundRepository.findByLobbyCode(lobbyCode).size();
 
-        // Seed catchup state so late subscribers / refreshes can recover via
-        // GET /lobbies/{code}/rounds/current before the first WS broadcast lands.
-        currentImageIndex.put(lobbyCode, 0);
-        currentTimeLeft.put(lobbyCode, 45);
-
         // Send first image immediately
         messagingTemplate.convertAndSend(
             "/topic/game/" + lobbyCode + "/image",
@@ -212,7 +189,6 @@ public Round createAndStartRound(String lobbyCode) {
         ScheduledFuture<?> future = scheduler.scheduleAtFixedRate(() -> {
             if (index[0] < images.size()) {
                 broadcastImage(lobbyCode, round.getId(), images.get(index[0]), index[0], roundNumber, totalRounds);
-                currentImageIndex.put(lobbyCode, index[0]);
                 index[0]++;
             } else {
                 stopTimer(lobbyCode);
@@ -229,8 +205,7 @@ public Round createAndStartRound(String lobbyCode) {
     
         ScheduledFuture<?> countdownFuture = scheduler.scheduleAtFixedRate(() -> {
             timeLeft[0]--;
-            currentTimeLeft.put(lobbyCode, Math.max(0, timeLeft[0]));
-
+            
             //#112 — Broadcast timer tick
             messagingTemplate.convertAndSend(
                 "/topic/game/" + lobbyCode + "/timer",
@@ -267,52 +242,11 @@ public Round createAndStartRound(String lobbyCode) {
     }
 
     public void cleanupLobby(String lobbyCode) {
-        stopCountdownTimer(lobbyCode);
-        stopTimer(lobbyCode);
-        currentImageIndex.remove(lobbyCode);
-        currentTimeLeft.remove(lobbyCode);
         List<Round> rounds = roundRepository.findByLobbyCode(lobbyCode);
         if (!rounds.isEmpty()) {
             rounds.forEach(r -> answerRepository.deleteAll(answerRepository.findByRoundId(r.getId())));
             roundRepository.deleteAll(rounds);
         }
-    }
-
-    /**
-     * Snapshot of the active round for late subscribers (game page mount race,
-     * F5 mid-round, reconnect). Returns null if no un-finished round exists.
-     */
-    public CurrentRoundDTO getCurrentRoundSnapshot(String lobbyCode) {
-        List<Round> rounds = roundRepository.findByLobbyCode(lobbyCode);
-        if (rounds.isEmpty()) return null;
-
-        Round active = null;
-        for (int i = rounds.size() - 1; i >= 0; i--) {
-            if (!rounds.get(i).isFinished()) {
-                active = rounds.get(i);
-                break;
-            }
-        }
-        if (active == null) return null;
-
-        List<String> images = active.getImageSequence();
-        if (images == null || images.isEmpty()) return null;
-
-        Lobby lobby = lobbyRepository.findByLobbyCode(lobbyCode);
-        int totalRounds = lobby != null ? lobby.getTotalRounds() : 1;
-        int roundNumber = rounds.size();
-        int imageIndex = currentImageIndex.getOrDefault(lobbyCode, 0);
-        int safeIndex = Math.min(Math.max(0, imageIndex), images.size() - 1);
-        int timeLeft = currentTimeLeft.getOrDefault(lobbyCode, 45);
-
-        CurrentRoundDTO dto = new CurrentRoundDTO();
-        dto.setRoundId(active.getId());
-        dto.setImageUrl(images.get(safeIndex));
-        dto.setIndex(safeIndex);
-        dto.setRoundNumber(roundNumber);
-        dto.setTotalRounds(totalRounds);
-        dto.setTimeLeft(Math.max(0, timeLeft));
-        return dto;
     }
     public void broadcastImage(String lobbyCode, Long roundId, String imageUrl, int index, int roundNumber, int totalRounds) {
         messagingTemplate.convertAndSend(
@@ -428,8 +362,6 @@ public Round createAndStartRound(String lobbyCode) {
 
         stopCountdownTimer(lobbyCode);
         stopTimer(lobbyCode);
-        currentImageIndex.remove(lobbyCode);
-        currentTimeLeft.remove(lobbyCode);
         round.setFinished(true);
         roundRepository.save(round);
         
@@ -454,10 +386,9 @@ public Round createAndStartRound(String lobbyCode) {
                     messagingTemplate.convertAndSend("/topic/game/" + lobbyCode + "/status", "GAME_OVER");
                     System.out.println("Game finished for lobby: " + lobbyCode);
                 } else {
-                    // Start Next Round (re-uses the async wrapper so its catch block
-                    // can broadcast START_FAILED if mid-game Mapillary fetch dies).
+                    // Start Next Round
                     System.out.println("Starting next round for lobby: " + lobbyCode);
-                    startRoundWithTimerAsync(lobbyCode);
+                    startRoundWithTimer(lobbyCode);
                 }
             }, 4, TimeUnit.SECONDS);
         }
