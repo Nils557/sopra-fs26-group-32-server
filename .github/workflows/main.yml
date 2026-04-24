@@ -49,7 +49,7 @@ jobs:
         uses: google-github-actions/deploy-appengine@v0.2.0
         with:
           deliverables: app.yaml
-          version: flex-v1
+          version: flexv1
           credentials: ${{ secrets.GCP_SERVICE_CREDENTIALS }}
           project_id: sopra-fs26-group-32-server
 
