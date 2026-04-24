@@ -19,6 +19,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
+import ch.uzh.ifi.hase.soprafs26.constant.LobbyStatus;
 import ch.uzh.ifi.hase.soprafs26.repository.LobbyRepository;
 import ch.uzh.ifi.hase.soprafs26.repository.UserRepository;
 import ch.uzh.ifi.hase.soprafs26.entity.Lobby;
@@ -213,21 +214,15 @@ public Round createAndStartRound(String lobbyCode) {
         
             //#110 — Round ends when timer reaches zero
             if (timeLeft[0] <= 0) {
-                stopCountdownTimer(lobbyCode);
-                stopTimer(lobbyCode);
-                round.setFinished(true);
-                roundRepository.save(round);
-            
-            // Broadcast round end event
-            messagingTemplate.convertAndSend(
-                "/topic/game/" + lobbyCode + "/roundEnd",
-                "ROUND_ENDED"
-            );
-            System.out.println("Round ended for lobby: " + lobbyCode);
+                // Check latest DB state to ensure we don't double-trigger if early-end just fired
+                Round currentRound = roundRepository.findById(round.getId()).orElse(round);
+                if (!currentRound.isFinished()) {
+                    handleRoundEnd(lobbyCode, currentRound);
+                }
             }
-            }, 1, 1, TimeUnit.SECONDS);
+        }, 1, 1, TimeUnit.SECONDS);
     
-            activeCountdownTimers.put(lobbyCode, countdownFuture);
+        activeCountdownTimers.put(lobbyCode, countdownFuture);
     }
 
     public void stopCountdownTimer(String lobbyCode) {
@@ -343,24 +338,60 @@ public Round createAndStartRound(String lobbyCode) {
 
         //#111 — Early round end if all players have answered
         Lobby lobby2 = lobbyRepository.findByLobbyCode(lobbyCode);
-            if (lobby2 != null) {
-                int totalPlayers = lobby2.getPlayers().size();
-                int answeredPlayers = answerRepository.findByRoundId(roundId).size();
+        if (lobby2 != null) {
+            int totalPlayers = lobby2.getPlayers().size();
+            int answeredPlayers = roundAnswers.size(); // Reuse the list we just fetched!
     
             if (answeredPlayers >= totalPlayers) {
-                stopCountdownTimer(lobbyCode);
-                stopTimer(lobbyCode);
-                round.setFinished(true);
-                roundRepository.save(round);
-                messagingTemplate.convertAndSend(
-            "/topic/game/" + lobbyCode + "/roundEnd",
-            "ROUND_ENDED"
-            );
-            System.out.println("Early round end for lobby: " + lobbyCode);
+                System.out.println("All players answered. Early round end for lobby: " + lobbyCode);
+                handleRoundEnd(lobbyCode, round);
+            }
         }
-    }
 
         return answer;
+    }
+
+    /**
+     * Centralized logic to handle the end of a round, whether by timer or all players answering.
+     * Evaluates if the game should progress to the next round or end entirely.
+     */
+    private synchronized void handleRoundEnd(String lobbyCode, Round round) {
+        if (round.isFinished()) {
+            return; // Prevent race conditions if timer and last answer happen at the exact same millisecond
+        }
+
+        stopCountdownTimer(lobbyCode);
+        stopTimer(lobbyCode);
+        round.setFinished(true);
+        roundRepository.save(round);
+        
+        // Broadcast round end event to trigger summary screen on frontend
+        messagingTemplate.convertAndSend(
+            "/topic/game/" + lobbyCode + "/roundEnd",
+            "ROUND_ENDED"
+        );
+        System.out.println("Round ended for lobby: " + lobbyCode);
+
+        Lobby lobby = lobbyRepository.findByLobbyCode(lobbyCode);
+        if (lobby != null) {
+            int currentRoundNumber = roundRepository.findByLobbyCode(lobbyCode).size();
+            int totalRounds = lobby.getTotalRounds();
+
+            // Schedule next action after a 10-second delay so players can see the round summary / results
+            scheduler.schedule(() -> {
+                if (currentRoundNumber >= totalRounds) {
+                    // Game Over
+                    lobby.setStatus(LobbyStatus.FINISHED);
+                    lobbyRepository.save(lobby);
+                    messagingTemplate.convertAndSend("/topic/game/" + lobbyCode + "/status", "GAME_OVER");
+                    System.out.println("Game finished for lobby: " + lobbyCode);
+                } else {
+                    // Start Next Round
+                    System.out.println("Starting next round for lobby: " + lobbyCode);
+                    startRoundWithTimer(lobbyCode);
+                }
+            }, 4, TimeUnit.SECONDS);
+        }
     }
 
 }
