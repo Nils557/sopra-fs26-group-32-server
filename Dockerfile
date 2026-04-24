@@ -4,6 +4,7 @@ WORKDIR /app
 # Copy Gradle configuration files
 COPY gradlew /app/
 COPY gradle /app/gradle
+RUN sed -i 's/\r$//' ./gradlew
 # Ensure Gradle wrapper is executable
 RUN chmod +x ./gradlew
 # Copy build script and source code
@@ -23,7 +24,7 @@ USER appuser
 # Set container working directory to /app
 WORKDIR /app
 # copy built artifact from build stage
-COPY --from=build /app/build/libs/*.jar /app/soprafs26.jar
+COPY --from=build /app/build/libs/soprafs26.jar /app/soprafs26.jar
 # Expose the port on which the server will be running (based on application.properties)
 EXPOSE 8080
 # start server

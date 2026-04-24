@@ -1,15 +1,21 @@
-runtime: java17
-instance_class: F2
 
-# We switch back to automatic, but force it to stay at exactly 1
-automatic_scaling:
-  min_instances: 1
-  max_instances: 1
+runtime: custom
+env: flex
+
+network:
+  session_affinity: true
+
+manual_scaling:
+  instances: 1
+
+resources:
+  cpu: 1
+  memory_gb: 1.5
+  disk_size_gb: 10
 
 env_variables:
   SPRING_SECURITY_USER_NAME: "admin"
   SPRING_SECURITY_USER_PASSWORD: "SoPra-Group32"
-  #SPRING_H2_CONSOLE_SETTINGS_WEB_ALLOW_OTHERS: "true"
   SPRING_PROFILES_ACTIVE: "production"
   JAVA_TOOL_OPTIONS: "-Xms128m -Xmx400m"
   MAPILLARY_ACCESS_TOKEN: "<MAPILLARY_ACCESS_TOKEN>"
