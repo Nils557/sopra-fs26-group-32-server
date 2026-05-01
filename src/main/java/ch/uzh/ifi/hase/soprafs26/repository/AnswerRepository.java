@@ -10,4 +10,6 @@ import java.util.List;
 public interface AnswerRepository extends JpaRepository<Answer, Long> {
     boolean existsByRoundIdAndPlayerId(Long roundId, Long playerId);
     List<Answer> findByRoundId(Long roundId);
+    List<Answer> findByPlayerId(Long playerId);
 }
+
