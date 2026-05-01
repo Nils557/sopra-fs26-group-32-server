@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import java.time.Instant;
 import ch.uzh.ifi.hase.soprafs26.constant.ScoreResult;
 import ch.uzh.ifi.hase.soprafs26.util.DistanceCalculator;
+import ch.uzh.ifi.hase.soprafs26.service.ScoringService;
 
 @Entity
 @Table(name = "ANSWER")
@@ -82,36 +83,14 @@ public class Answer {
      * - CORRECT_COUNTRY: <= 1000km (Yields 0 - 1000 points based on closeness)
      * - INCORRECT: > 1000km (Yields 0 points)
      */
-    public void calculateScoreBasedOnDistance() {
-        double distance = getDistanceToTargetInKm();
-        
-        final double CITY_THRESHOLD_KM = 50.0;
-        final double COUNTRY_THRESHOLD_KM = 1000.0;
-        final int MAX_POINTS = 2000;
-        final int HALF_POINTS = 1000;
-
-        if (distance <= CITY_THRESHOLD_KM) {
-            this.scoreResult = ScoreResult.CORRECT_CITY;
-            // Scales linearly from 2000 points (0km) down to 1500 points (50km)
-            double penalty = (distance / CITY_THRESHOLD_KM) * 500;
-            this.pointsAwarded = MAX_POINTS - (int) penalty;
-            
-        } else if (distance <= COUNTRY_THRESHOLD_KM) {
-            this.scoreResult = ScoreResult.CORRECT_COUNTRY;
-            // Scales linearly from 1000 points (50km) down to 0 points (1000km)
-            double distanceIntoCountry = distance - CITY_THRESHOLD_KM;
-            double countryRange = COUNTRY_THRESHOLD_KM - CITY_THRESHOLD_KM;
-            double penalty = (distanceIntoCountry / countryRange) * HALF_POINTS;
-            this.pointsAwarded = HALF_POINTS - (int) penalty;
-            
-        } else {
-            this.scoreResult = ScoreResult.INCORRECT;
-            this.pointsAwarded = 0;
-        }
-
-        // Failsafe bounds check
-        if (this.pointsAwarded < 0) {
-            this.pointsAwarded = 0;
-        }
+    public void calculateScoreBasedOnDistance(ScoringService scoringService) {
+        this.pointsAwarded = scoringService.calculateScore(
+            this.latitude, this.longitude,
+            this.round.getTargetLatitude(), this.round.getTargetLongitude()
+        );
+        this.scoreResult = scoringService.getScoreResult(
+            this.latitude, this.longitude,
+            this.round.getTargetLatitude(), this.round.getTargetLongitude()
+        );
     }
 }

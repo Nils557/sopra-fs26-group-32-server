@@ -51,6 +51,7 @@ public class RoundService {
     private final LobbyRepository lobbyRepository;
     private final UserRepository UserRepository;
     private final AnswerRepository answerRepository;
+    private final ScoringService scoringService;
 
     // This list will hold all 200+ coordinates in memory for instant access
     private List<CuratedLocation> locationsDataset = new ArrayList<>();
@@ -80,13 +81,14 @@ public class RoundService {
     }
 
     @Autowired
-    public RoundService(RoundRepository roundRepository, MapillaryService mapillaryService, SimpMessagingTemplate messagingTemplate, LobbyRepository lobbyRepository, UserRepository UserRepository, AnswerRepository answerRepository) {
+    public RoundService(RoundRepository roundRepository, MapillaryService mapillaryService, SimpMessagingTemplate messagingTemplate, LobbyRepository lobbyRepository, UserRepository UserRepository, AnswerRepository answerRepository, ScoringService scoringService) {
         this.roundRepository = roundRepository;
         this.mapillaryService = mapillaryService;
         this.messagingTemplate = messagingTemplate;
         this.lobbyRepository = lobbyRepository;
         this.UserRepository = UserRepository;
         this.answerRepository = answerRepository;
+        this.scoringService = scoringService;
         this.random = new Random();
     }
 
@@ -331,7 +333,7 @@ public Round createAndStartRound(String lobbyCode) {
         answer.setPlayer(player);
         answer.setSubmittedAt(Instant.now());
         answer.setPointsAwarded(0); // Scored evaluated at round end (S9)
-        answer.calculateScoreBasedOnDistance();
+        answer.calculateScoreBasedOnDistance(scoringService);
         answer = answerRepository.save(answer);
 
         // Notify lobby via WebSocket (Real-Time UI Update for S11)
