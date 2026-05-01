@@ -345,16 +345,7 @@ public Round createAndStartRound(String lobbyCode) {
         messagingTemplate.convertAndSend("/topic/lobby/" + lobbyCode + "/answers", states);
 
         //#147 — Broadcast per-player score update
-        List<PlayerScore> scores = lobby.getPlayers().stream()
-            .map(p -> {
-                int totalScore = answerRepository.findByPlayerId(p.getId()).stream()
-                    .mapToInt(Answer::getPointsAwarded)
-                    .sum();
-                return new PlayerScore(p.getId(), p.getUsername(), totalScore);
-            })
-            .sorted((a, b) -> b.score - a.score)
-            .collect(Collectors.toList());
-
+        List<ScoringService.PlayerStanding> scores = scoringService.getStandings(lobbyCode);
         messagingTemplate.convertAndSend("/topic/lobby/" + lobbyCode + "/scores", scores);
 
         //#111 — Early round end if all players have answered
@@ -412,19 +403,6 @@ public Round createAndStartRound(String lobbyCode) {
                     startRoundWithTimer(lobbyCode);
                 }
             }, 4, TimeUnit.SECONDS);
-        }
-    }
-
-
-    public static class PlayerScore {  
-        public final Long playerId;
-        public final String username;
-        public final int score;
-
-        public PlayerScore(Long playerId, String username, int score) {
-            this.playerId = playerId;
-            this.username = username;
-            this.score = score;
         }
     }
 }
