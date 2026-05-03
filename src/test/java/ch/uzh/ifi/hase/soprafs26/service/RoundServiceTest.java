@@ -90,10 +90,15 @@ public class RoundServiceTest {
     private UserRepository userRepository;
 
     @Mock
+<<<<<<< HEAD
     private ScoringService scoringService;
 
     @Mock
     private GeocodingService geocodingService; 
+=======
+    private GeocodingService geocodingService; // Add this line with the other @Mocks
+    private ScoringService scoringService;
+>>>>>>> b71b4856e4a355185648fd1d4f15c284af568610
 
     @InjectMocks
     private RoundService roundService;
