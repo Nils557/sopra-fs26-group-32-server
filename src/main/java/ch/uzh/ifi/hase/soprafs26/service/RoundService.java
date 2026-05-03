@@ -158,10 +158,9 @@ public class RoundService {
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             CuratedLocation selectedLocation = locationsDataset.get(random.nextInt(locationsDataset.size()));
             
-            // MISSING TRY BLOCK ADDED HERE
             try { 
                 // Try our luck with a random city
-                Round round = tryCreateRound(lobbyCode, selectedLocation.getLatitude(), selectedLocation.getLongitude(), 0.01);
+                Round round = tryCreateRound(lobbyCode, selectedLocation.getLatitude(), selectedLocation.getLongitude(), 0.05);
                 
                 // If the line above doesn't throw an error, it succeeded!
                 System.out.println("Game started in: " + selectedLocation.getName());
