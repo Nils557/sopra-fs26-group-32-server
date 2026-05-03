@@ -54,7 +54,10 @@ public class LobbyService {
         newLobby.getPlayers().add(host);
         newLobby = lobbyRepository.save(newLobby);
         lobbyRepository.flush();
+
+        log.info("WAITING LOBBY: Triggering background preload for Round 1 in lobby {}", newLobby.getLobbyCode());
         roundService.preloadNextRoundAsync(newLobby.getLobbyCode());
+
         log.debug("Created lobby with code: {}", newLobby.getLobbyCode());
         return newLobby;
     }

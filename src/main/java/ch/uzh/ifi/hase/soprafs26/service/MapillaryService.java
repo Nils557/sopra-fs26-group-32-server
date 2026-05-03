@@ -3,6 +3,8 @@ package ch.uzh.ifi.hase.soprafs26.service;
 import java.util.List;
 import java.util.Locale;
 import java.util.Random;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
@@ -31,6 +33,7 @@ public class MapillaryService {
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
     private final Random random;
+    private final Logger log = LoggerFactory.getLogger(LobbyService.class);
 
     public MapillaryService() {
         this.restTemplate = new RestTemplate();
@@ -82,8 +85,7 @@ public class MapillaryService {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Mapillary API token not configured.");
         }
 
-        // 1. Ask for 'sequence_id' in the fields, and increase the limit to 50 so we have plenty to pick from
-        String url = String.format(Locale.US, "%s/images?fields=id,thumb_1024_url,sequence_id&limit=50&bbox=%f,%f,%f,%f",
+        String url = String.format(Locale.US, "%s/images?fields=id,thumb_1024_url,sequence_id&limit=1000&bbox=%f,%f,%f,%f",
                                      baseUrl, minLon, minLat, maxLon, maxLat);
 
         HttpHeaders headers = new HttpHeaders();
@@ -98,34 +100,43 @@ public class MapillaryService {
                 throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No images found in the target area.");
             }
 
-            // 2. Put all JSON nodes in a list and shuffle them FIRST.
-            // This prevents us from always picking sequences from the same part of town.
             List<JsonNode> nodeList = new java.util.ArrayList<>();
             data.forEach(nodeList::add);
             java.util.Collections.shuffle(nodeList, random);
 
-            // 3. Filter for unique sequences
             java.util.Set<String> seenSequences = new java.util.HashSet<>();
             List<String> finalUrls = new java.util.ArrayList<>();
 
+            // PASS 1: Try to get 5 perfectly unique sequences
             for (JsonNode node : nodeList) {
                 String seqId = node.path("sequence_id").asText();
-                
-                // If we haven't seen this sequence yet, add the image!
                 if (!seenSequences.contains(seqId)) {
                     seenSequences.add(seqId);
                     finalUrls.add(node.path("thumb_1024_url").asText());
                 }
-
-                // Stop as soon as we have the exact number we need (5)
                 if (finalUrls.size() == count) {
-                    break;
+                    break; // Success! We found 5 unique drives.
                 }
             }
 
-            // 4. Safety check: did we actually find enough unique sequences?
             if (finalUrls.size() < count) {
-                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Not enough unique locations found.");
+                log.warn("Only found {} unique sequences. Falling back to non-unique images to fill the round of {}.", finalUrls.size(), count);
+                
+                for (JsonNode node : nodeList) {
+                    String urlStr = node.path("thumb_1024_url").asText();
+                    if (!finalUrls.contains(urlStr)) {
+                        finalUrls.add(urlStr);
+                    }
+                    if (finalUrls.size() == count) {
+                        break;
+                    }
+                }
+            }
+
+            // PASS 3: The ultimate safety net
+            if (finalUrls.size() < count) {
+                log.error("CRITICAL: Area does not even contain {} total images. Only found {}.", count, finalUrls.size());
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Not enough images found in the target area.");
             }
 
             return finalUrls;
