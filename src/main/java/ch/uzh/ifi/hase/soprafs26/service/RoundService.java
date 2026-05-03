@@ -1,42 +1,41 @@
 package ch.uzh.ifi.hase.soprafs26.service;
 
-import ch.uzh.ifi.hase.soprafs26.entity.Round;
-import ch.uzh.ifi.hase.soprafs26.repository.RoundRepository;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.core.io.ClassPathResource;
-import org.springframework.http.HttpStatus;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
-import jakarta.annotation.PostConstruct;
-
+import java.io.InputStream;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.http.HttpStatus;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
+
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import ch.uzh.ifi.hase.soprafs26.constant.LobbyStatus;
-import ch.uzh.ifi.hase.soprafs26.repository.LobbyRepository;
-import ch.uzh.ifi.hase.soprafs26.repository.UserRepository;
+import ch.uzh.ifi.hase.soprafs26.entity.Answer;
 import ch.uzh.ifi.hase.soprafs26.entity.Lobby;
+import ch.uzh.ifi.hase.soprafs26.entity.Round;
 import ch.uzh.ifi.hase.soprafs26.entity.User;
-import ch.uzh.ifi.hase.soprafs26.rest.dto.AnswerPostDTO;
+import ch.uzh.ifi.hase.soprafs26.repository.AnswerRepository;
+import ch.uzh.ifi.hase.soprafs26.repository.LobbyRepository;
+import ch.uzh.ifi.hase.soprafs26.repository.RoundRepository;
+import ch.uzh.ifi.hase.soprafs26.repository.UserRepository;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.RoundSummaryGetDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.mapper.DTOMapper;
-import ch.uzh.ifi.hase.soprafs26.entity.Answer;
-import ch.uzh.ifi.hase.soprafs26.repository.AnswerRepository;
-
-import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.Map;
-import java.util.List;
-import java.util.Random;
-import java.time.Instant;
-import java.util.stream.Collectors;
+import jakarta.annotation.PostConstruct;
 
 @Service
 @Transactional
@@ -54,6 +53,7 @@ public class RoundService {
     private final UserRepository UserRepository;
     private final AnswerRepository answerRepository;
     private final ScoringService scoringService;
+    private final Map<String, Round> preloadedRounds = new ConcurrentHashMap<>();
 
     // This list will hold all 200+ coordinates in memory for instant access
     private List<CuratedLocation> locationsDataset = new ArrayList<>();
@@ -109,7 +109,47 @@ public class RoundService {
         }
     }
 
-public Round createAndStartRound(String lobbyCode) {
+    public void preloadNextRoundAsync(String lobbyCode) {
+        scheduler.execute(() -> {
+            try {
+                // We do exactly what createAndStartRound does, but we DON'T save it yet.
+                CuratedLocation selectedLocation = locationsDataset.get(random.nextInt(locationsDataset.size()));
+                
+                List<String> imageUrls = mapillaryService.getImageSequence(
+                    selectedLocation.getLongitude() - 0.01, selectedLocation.getLatitude() - 0.01,
+                    selectedLocation.getLongitude() + 0.01, selectedLocation.getLatitude() + 0.01,
+                    5
+                );
+
+                Round preloaded = new Round();
+                preloaded.setLobbyCode(lobbyCode);
+                preloaded.setTargetLatitude(selectedLocation.getLatitude());
+                preloaded.setTargetLongitude(selectedLocation.getLongitude());
+                preloaded.setImageSequence(imageUrls);
+
+                // Park it in memory for later
+                preloadedRounds.put(lobbyCode, preloaded);
+                System.out.println("Successfully preloaded next round for lobby: " + lobbyCode);
+
+            } catch (Exception e) {
+                // If it fails in the background, we just silently ignore it. 
+                // The main thread will fall back to synchronous fetching later
+                System.out.println("Background preload failed, will fallback to sync later.");
+            }
+        });
+    }
+
+    public Round createAndStartRound(String lobbyCode) {
+
+        // 1. Check if we have a round pre-fetched in memory
+        Round readyRound = preloadedRounds.remove(lobbyCode);
+
+        // 2. If we do, just save it and return instantly
+        if (readyRound != null) {
+            System.out.println("Using preloaded round for instant start!");
+            return roundRepository.save(readyRound);
+        }
+
         if (locationsDataset.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "No locations available to start the round.");
         }
@@ -118,10 +158,9 @@ public Round createAndStartRound(String lobbyCode) {
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             CuratedLocation selectedLocation = locationsDataset.get(random.nextInt(locationsDataset.size()));
             
-            // MISSING TRY BLOCK ADDED HERE
             try { 
                 // Try our luck with a random city
-                Round round = tryCreateRound(lobbyCode, selectedLocation.getLatitude(), selectedLocation.getLongitude(), 0.01);
+                Round round = tryCreateRound(lobbyCode, selectedLocation.getLatitude(), selectedLocation.getLongitude(), 0.05);
                 
                 // If the line above doesn't throw an error, it succeeded!
                 System.out.println("Game started in: " + selectedLocation.getName());
@@ -207,6 +246,11 @@ public Round createAndStartRound(String lobbyCode) {
 
         activeTimers.put(lobbyCode, future);
         startCountdownTimer(lobbyCode, round);
+        
+        // Only preload Image URL's if we actually have more rounds left to play
+        if (roundNumber < totalRounds) {
+            preloadNextRoundAsync(lobbyCode);
+        }
         return round;
     }
 

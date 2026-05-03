@@ -1,17 +1,23 @@
 package ch.uzh.ifi.hase.soprafs26.service;
 
-import ch.uzh.ifi.hase.soprafs26.rest.dto.MapillaryGetDTO;
+import java.util.List;
+import java.util.Locale;
+import java.util.Random;
+
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.*;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.server.ResponseStatusException;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import java.util.List;
-import java.util.Random;
-import java.util.Locale;
+import ch.uzh.ifi.hase.soprafs26.rest.dto.MapillaryGetDTO;
 
 @Service
 public class MapillaryService {
@@ -76,8 +82,9 @@ public class MapillaryService {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Mapillary API token not configured.");
         }
 
-        String url = String.format(Locale.US, "%s/images?fields=id,thumb_1024_url&limit=10&bbox=%f,%f,%f,%f", 
-                                    baseUrl, minLon, minLat, maxLon, maxLat);
+        // 1. Ask for 'sequence_id' in the fields, and increase the limit to 50 so we have plenty to pick from
+        String url = String.format(Locale.US, "%s/images?fields=id,thumb_1024_url,sequence_id&limit=50&bbox=%f,%f,%f,%f",
+                                     baseUrl, minLon, minLat, maxLon, maxLat);
 
         HttpHeaders headers = new HttpHeaders();
         headers.set("Authorization", "OAuth " + accessToken);
@@ -87,19 +94,41 @@ public class MapillaryService {
             ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
             JsonNode data = objectMapper.readTree(response.getBody()).path("data");
 
-            if (data.isMissingNode() || !data.isArray() || data.size() < count) {
-                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Not enough images found in the target area.");
+            if (data.isMissingNode() || !data.isArray() || data.isEmpty()) {
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No images found in the target area.");
             }
 
-            // Extract all URLs into a list
-            List<String> allUrls = new java.util.ArrayList<>();
-            for (JsonNode node : data) {
-                allUrls.add(node.path("thumb_1024_url").asText());
+            // 2. Put all JSON nodes in a list and shuffle them FIRST.
+            // This prevents us from always picking sequences from the same part of town.
+            List<JsonNode> nodeList = new java.util.ArrayList<>();
+            data.forEach(nodeList::add);
+            java.util.Collections.shuffle(nodeList, random);
+
+            // 3. Filter for unique sequences
+            java.util.Set<String> seenSequences = new java.util.HashSet<>();
+            List<String> finalUrls = new java.util.ArrayList<>();
+
+            for (JsonNode node : nodeList) {
+                String seqId = node.path("sequence_id").asText();
+                
+                // If we haven't seen this sequence yet, add the image!
+                if (!seenSequences.contains(seqId)) {
+                    seenSequences.add(seqId);
+                    finalUrls.add(node.path("thumb_1024_url").asText());
+                }
+
+                // Stop as soon as we have the exact number we need (5)
+                if (finalUrls.size() == count) {
+                    break;
+                }
             }
 
-            // Shuffle and pick the requested count
-            java.util.Collections.shuffle(allUrls, random);
-            return allUrls.subList(0, count);
+            // 4. Safety check: did we actually find enough unique sequences?
+            if (finalUrls.size() < count) {
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Not enough unique locations found.");
+            }
+
+            return finalUrls;
 
         } catch (Exception e) {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Failed to fetch image sequence: " + e.getMessage());
