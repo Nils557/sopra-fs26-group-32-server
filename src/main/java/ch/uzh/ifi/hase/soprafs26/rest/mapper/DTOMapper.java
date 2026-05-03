@@ -3,17 +3,21 @@ package ch.uzh.ifi.hase.soprafs26.rest.mapper;
 import org.mapstruct.*;
 import org.mapstruct.factory.Mappers;
 import java.time.Instant;
+import java.util.List;
 
 import ch.uzh.ifi.hase.soprafs26.entity.User;
 import ch.uzh.ifi.hase.soprafs26.entity.Lobby;
+import ch.uzh.ifi.hase.soprafs26.entity.Round;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.LobbyGetDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.LobbyPostDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.UserGetDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.UserPostDTO;
+import ch.uzh.ifi.hase.soprafs26.service.ScoringService;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.LobbyStartGetDTO;
 import ch.uzh.ifi.hase.soprafs26.entity.Answer;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.AnswerGetDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.AnswerPostDTO;
+import ch.uzh.ifi.hase.soprafs26.rest.dto.RoundSummaryGetDTO;
 
 
 /**
@@ -71,6 +75,12 @@ public interface DTOMapper {
     @Mapping(source = "pointsAwarded", target = "pointsAwarded")
     @Mapping(source = "submittedAt", target = "submittedAt")
     AnswerGetDTO convertEntityToAnswerGetDTO(Answer answer);
+
+    @Mapping(source = "round.id", target = "roundId")
+    @Mapping(source = "round.targetLatitude", target = "correctLatitude")
+    @Mapping(source = "round.targetLongitude", target = "correctLongitude")
+    @Mapping(target = "correctCity", constant = "Mystery City") // Placeholder since we skipped Geocoding
+    @Mapping(target = "correctCountry", constant = "Mystery Country") // Placeholder
+    @Mapping(source = "standings", target = "standings")
+    RoundSummaryGetDTO convertToRoundSummaryGetDTO(Round round, List<ScoringService.PlayerStanding> standings);
 }
-
-
