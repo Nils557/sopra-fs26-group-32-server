@@ -83,14 +83,14 @@ public class Answer {
      * - CORRECT_COUNTRY: <= 1000km (Yields 0 - 1000 points based on closeness)
      * - INCORRECT: > 1000km (Yields 0 points)
      */
-    public void calculateScoreBasedOnDistance(ScoringService scoringService) {
+public void calculateScoreBasedOnDistance(ScoringService scoringService) {
+        // Pass 'this.round' to allow service to access TargetCity and TargetCountry
         this.pointsAwarded = scoringService.calculateScore(
-            this.latitude, this.longitude,
-            this.round.getTargetLatitude(), this.round.getTargetLongitude()
+            this.latitude, this.longitude, this.round
         );
+        
         this.scoreResult = scoringService.getScoreResult(
-            this.latitude, this.longitude,
-            this.round.getTargetLatitude(), this.round.getTargetLongitude()
+            this.latitude, this.longitude, this.round
         );
     }
 }

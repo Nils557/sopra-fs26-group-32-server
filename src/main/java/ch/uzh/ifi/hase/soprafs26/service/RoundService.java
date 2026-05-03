@@ -35,6 +35,7 @@ import ch.uzh.ifi.hase.soprafs26.repository.AnswerRepository;
 import ch.uzh.ifi.hase.soprafs26.repository.LobbyRepository;
 import ch.uzh.ifi.hase.soprafs26.repository.RoundRepository;
 import ch.uzh.ifi.hase.soprafs26.repository.UserRepository;
+import ch.uzh.ifi.hase.soprafs26.rest.dto.LocationResult;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.RoundSummaryGetDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.mapper.DTOMapper;
 import jakarta.annotation.PostConstruct;
@@ -57,6 +58,8 @@ public class RoundService {
     private final ScoringService scoringService;
     private final Map<String, Round> preloadedRounds = new ConcurrentHashMap<>();
     private final Logger log = LoggerFactory.getLogger(RoundService.class);
+    private final GeocodingService geocodingService;
+
 
 
     // This list will hold all 200+ coordinates in memory for instant access
@@ -87,16 +90,26 @@ public class RoundService {
     }
 
     @Autowired
-    public RoundService(RoundRepository roundRepository, MapillaryService mapillaryService, SimpMessagingTemplate messagingTemplate, LobbyRepository lobbyRepository, UserRepository UserRepository, AnswerRepository answerRepository, ScoringService scoringService) {
-        this.roundRepository = roundRepository;
-        this.mapillaryService = mapillaryService;
-        this.messagingTemplate = messagingTemplate;
-        this.lobbyRepository = lobbyRepository;
-        this.UserRepository = UserRepository;
-        this.answerRepository = answerRepository;
-        this.scoringService = scoringService;
-        this.random = new Random();
-    }
+        public RoundService(
+            RoundRepository roundRepository, 
+            MapillaryService mapillaryService, 
+            SimpMessagingTemplate messagingTemplate, 
+            LobbyRepository lobbyRepository, 
+            UserRepository userRepository,
+            AnswerRepository answerRepository, 
+            ScoringService scoringService,
+            GeocodingService geocodingService 
+        ) {
+            this.roundRepository = roundRepository;
+            this.mapillaryService = mapillaryService;
+            this.messagingTemplate = messagingTemplate;
+            this.lobbyRepository = lobbyRepository;
+            this.UserRepository = userRepository; 
+            this.answerRepository = answerRepository;
+            this.scoringService = scoringService;
+            this.geocodingService = geocodingService; 
+            this.random = new Random();
+        }
 
     // This runs automatically exactly once when Spring Boot starts up
     @PostConstruct
@@ -125,11 +138,17 @@ public class RoundService {
                     5
                 );
 
+                LocationResult location = geocodingService.resolveLocation(
+                    selectedLocation.getLatitude(), selectedLocation.getLongitude()
+                );
+
                 Round preloaded = new Round();
                 preloaded.setLobbyCode(lobbyCode);
                 preloaded.setTargetLatitude(selectedLocation.getLatitude());
                 preloaded.setTargetLongitude(selectedLocation.getLongitude());
                 preloaded.setImageSequence(imageUrls);
+                preloaded.setTargetCity(location.getCity());
+                preloaded.setTargetCountry(location.getCountry());
 
                 preloadedRounds.put(lobbyCode, preloaded);
                 
@@ -196,17 +215,18 @@ public class RoundService {
      * Helper method to reduce code duplication
      */
     private Round tryCreateRound(String lobbyCode, double lat, double lon, double delta) {
-        // No try-catch here anymore! Let the exception bubble up.
-        List<String> imageUrls = mapillaryService.getImageSequence(
-                lon - delta, lat - delta, 
-                lon + delta, lat + delta, 
-                5);
+        List<String> imageUrls = mapillaryService.getImageSequence(lon - delta, lat - delta, lon + delta, lat + delta, 5);
+        
+        // Resolve target names once here
+        LocationResult location = geocodingService.resolveLocation(lat, lon);
 
         Round round = new Round();
         round.setLobbyCode(lobbyCode);
         round.setTargetLatitude(lat);
         round.setTargetLongitude(lon);
         round.setImageSequence(imageUrls);
+        round.setTargetCity(location.getCity()); // Ensure these match the resolved API names
+        round.setTargetCountry(location.getCountry());
         
         return roundRepository.save(round);
     }

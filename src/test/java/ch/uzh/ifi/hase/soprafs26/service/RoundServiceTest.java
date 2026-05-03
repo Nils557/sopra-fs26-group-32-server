@@ -26,6 +26,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.anyDouble;
+import static org.mockito.Mockito.when;
 import org.mockito.MockitoAnnotations;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -37,6 +39,7 @@ import ch.uzh.ifi.hase.soprafs26.repository.AnswerRepository;
 import ch.uzh.ifi.hase.soprafs26.repository.LobbyRepository;
 import ch.uzh.ifi.hase.soprafs26.repository.RoundRepository;
 import ch.uzh.ifi.hase.soprafs26.repository.UserRepository;
+import ch.uzh.ifi.hase.soprafs26.rest.dto.LocationResult;
 
 
 /**
@@ -81,6 +84,9 @@ public class RoundServiceTest {
     @Mock
     private UserRepository userRepository;
 
+    @Mock
+    private GeocodingService geocodingService; // Add this line with the other @Mocks
+
     @InjectMocks
     private RoundService roundService;
 
@@ -95,6 +101,8 @@ public class RoundServiceTest {
     private void seedDataset(RoundService.CuratedLocation... locations) {
         List<RoundService.CuratedLocation> dataset = new ArrayList<>(Arrays.asList(locations));
         ReflectionTestUtils.setField(roundService, "locationsDataset", dataset);
+        when(geocodingService.resolveLocation(anyDouble(), anyDouble()))
+            .thenReturn(new LocationResult("Test City", "Test Country"));
     }
 
     // -------------------------------------------------------------------
@@ -121,6 +129,8 @@ public class RoundServiceTest {
         when(mapillaryService.getImageSequence(anyDouble(), anyDouble(), anyDouble(), anyDouble(), eq(5)))
                 .thenReturn(urls);
         when(roundRepository.save(any(Round.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(geocodingService.resolveLocation(anyDouble(), anyDouble()))
+                .thenReturn(new ch.uzh.ifi.hase.soprafs26.rest.dto.LocationResult("NYC", "USA"));
 
         // when
         Round round = roundService.createAndStartRound("AB-1234");

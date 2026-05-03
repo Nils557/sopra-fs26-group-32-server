@@ -27,6 +27,12 @@ public class Round {
     @Column
     private Instant startedAt;
 
+    @Column
+    private String targetCity;
+
+    @Column
+    private String targetCountry;
+
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "ROUND_IMAGES", joinColumns = @JoinColumn(name = "round_id"))
     @Column(name = "image_url", length = 1000) // URLs can be long
@@ -47,4 +53,8 @@ public class Round {
     public void setFinished(boolean finished) { this.finished = finished; }
     public Instant getStartedAt() { return startedAt; }
     public void setStartedAt(Instant startedAt) { this.startedAt = startedAt; }
+    public String getTargetCity() { return targetCity; }
+    public void setTargetCity(String targetCity) { this.targetCity = targetCity; }
+    public String getTargetCountry() { return targetCountry; }
+    public void setTargetCountry(String targetCountry) { this.targetCountry = targetCountry; }
 }
