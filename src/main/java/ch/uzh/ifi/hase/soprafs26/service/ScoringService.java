@@ -5,6 +5,7 @@ import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import ch.uzh.ifi.hase.soprafs26.constant.ScoreResult;
 import ch.uzh.ifi.hase.soprafs26.entity.Answer;
@@ -59,7 +60,7 @@ public class ScoringService {
         }
     }
 
-
+    @Transactional
     public List<PlayerStanding> getStandings(String lobbyCode) {
         Lobby lobby = lobbyRepository.findByLobbyCode(lobbyCode);
         if (lobby == null) return List.of();
