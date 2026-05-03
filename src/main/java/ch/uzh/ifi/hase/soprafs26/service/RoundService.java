@@ -409,7 +409,7 @@ public Round createAndStartRound(String lobbyCode) {
                     System.out.println("Starting next round for lobby: " + lobbyCode);
                     startRoundWithTimer(lobbyCode);
                 }
-            }, 4, TimeUnit.SECONDS);
+            }, 10, TimeUnit.SECONDS);
         }
     }
 
