@@ -405,7 +405,7 @@ public class RoundService {
             int answeredPlayers = roundAnswers.size(); // Reuse the list we just fetched!
     
             if (answeredPlayers >= totalPlayers) {
-                System.out.println("All players answered. Early round end for lobby: " + lobbyCode);
+                log.info("All players answered. Early round end for lobby: {}", lobbyCode);
                 handleRoundEnd(lobbyCode, round);
             }
         }
@@ -432,32 +432,39 @@ public class RoundService {
             "/topic/game/" + lobbyCode + "/roundEnd",
             "ROUND_ENDED"
         );
-        System.out.println("Round ended for lobby: " + lobbyCode);
-        RoundSummaryGetDTO summaryPayload = getRoundSummary(lobbyCode, round.getId());
-        messagingTemplate.convertAndSend(
-            "/topic/lobby/" + lobbyCode + "/summary", 
-            summaryPayload
-        );
+        try {
+            RoundSummaryGetDTO summaryPayload = getRoundSummary(lobbyCode, round.getId());
+            messagingTemplate.convertAndSend("/topic/lobby/" + lobbyCode + "/summary", summaryPayload);
+            log.info("Successfully broadcasted summary screen payload.");
 
-        Lobby lobby = lobbyRepository.findByLobbyCode(lobbyCode);
-        if (lobby != null) {
-            int currentRoundNumber = roundRepository.findByLobbyCode(lobbyCode).size();
-            int totalRounds = lobby.getTotalRounds();
+            Lobby lobby = lobbyRepository.findByLobbyCode(lobbyCode);
+            if (lobby != null) {
+                int currentRoundNumber = roundRepository.findByLobbyCode(lobbyCode).size();
+                int totalRounds = lobby.getTotalRounds();
+                
+                log.info("Scheduling next action in 10s. Current Round: {}, Total Rounds: {}", currentRoundNumber, totalRounds);
 
-            // Schedule next action after a 10-second delay so players can see the round summary / results
-            scheduler.schedule(() -> {
-                if (currentRoundNumber >= totalRounds) {
-                    // Game Over
-                    lobby.setStatus(LobbyStatus.FINISHED);
-                    lobbyRepository.save(lobby);
-                    messagingTemplate.convertAndSend("/topic/game/" + lobbyCode + "/status", "GAME_OVER");
-                    System.out.println("Game finished for lobby: " + lobbyCode);
-                } else {
-                    // Start Next Round
-                    System.out.println("Starting next round for lobby: " + lobbyCode);
-                    startRoundWithTimer(lobbyCode);
-                }
-            }, 10, TimeUnit.SECONDS);
+                scheduler.schedule(() -> {
+                    try {
+                        if (currentRoundNumber >= totalRounds) {
+                            lobby.setStatus(LobbyStatus.FINISHED);
+                            lobbyRepository.save(lobby);
+                            messagingTemplate.convertAndSend("/topic/lobby/" + lobbyCode + "/game-state", "GAME_END");
+                            log.info("Broadcasted GAME_END for lobby: {}", lobbyCode);
+                        } else {
+                            messagingTemplate.convertAndSend("/topic/lobby/" + lobbyCode + "/game-state", "NEXT_ROUND");
+                            log.info("Broadcasted NEXT_ROUND for lobby: {}", lobbyCode);
+                            startRoundWithTimer(lobbyCode); // Start Round 2!
+                        }
+                    } catch (Exception e) {
+                        log.error("CRASH INSIDE SCHEDULER: ", e); // Catch errors inside the timer
+                    }
+                }, 10, TimeUnit.SECONDS);
+            } else {
+                log.error("Lobby was NULL when trying to schedule the next round!");
+            }
+        } catch (Exception e) {
+            log.error("CRITICAL CRASH DURING ROUND END TRANSITION: ", e); // Catch the silent killer!
         }
     }
 
