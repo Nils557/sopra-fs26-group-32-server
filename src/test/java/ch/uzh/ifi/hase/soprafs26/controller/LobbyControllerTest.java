@@ -1,16 +1,24 @@
 package ch.uzh.ifi.hase.soprafs26.controller;
 
 import ch.uzh.ifi.hase.soprafs26.constant.LobbyStatus;
+import ch.uzh.ifi.hase.soprafs26.constant.ScoreResult;
+import ch.uzh.ifi.hase.soprafs26.entity.Answer;
 import ch.uzh.ifi.hase.soprafs26.entity.Lobby;
+import ch.uzh.ifi.hase.soprafs26.entity.Round;
 import ch.uzh.ifi.hase.soprafs26.entity.User;
+import ch.uzh.ifi.hase.soprafs26.rest.dto.AnswerPostDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.LobbyGetDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.LobbyJoinRequestDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.LobbyPostDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.LobbyStartRequestDTO;
+import ch.uzh.ifi.hase.soprafs26.rest.dto.RoundSummaryGetDTO;
 import ch.uzh.ifi.hase.soprafs26.service.LobbyService;
 import ch.uzh.ifi.hase.soprafs26.service.RoundService;
+import ch.uzh.ifi.hase.soprafs26.service.ScoringService;
 
+import java.time.Instant;
 import java.util.Arrays;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -250,6 +258,109 @@ public class LobbyControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.lobbyCode", is("AB-1234")))
                 .andExpect(jsonPath("$.status", is("INGAME")));
+    }
+
+    /**
+     * US7 #102 / US9 #146 — POST /lobbies/{code}/rounds/{roundId}/answers
+     * (submit pin) endpoint.
+     *
+     * The controller parses the path + body and delegates to
+     * RoundService.submitAnswer, which is where validation, scoring,
+     * persistence, and the WS broadcasts live (covered in
+     * RoundServiceTest). On success the response is HTTP 201 with an
+     * AnswerGetDTO carrying the saved id, echoed coords, score result,
+     * points awarded, and the submission timestamp.
+     *
+     * NB: the dev-task title calls this "POST .../guess" but the actual
+     * route is .../answers (REST sub-resource style). This test pins
+     * the real URL.
+     */
+    @Test
+    public void submitAnswer_validInput_returns201WithAnswerGetDTO() throws Exception {
+        // given — request body and the service's "persisted" return value
+        AnswerPostDTO body = new AnswerPostDTO();
+        body.setPlayerId(7L);
+        body.setLatitude(47.3769);
+        body.setLongitude(8.5417);
+
+        Round round = new Round();
+        round.setId(10L);
+        round.setLobbyCode("AB-1234");
+
+        User player = new User();
+        player.setId(7L);
+        player.setUsername("guest");
+
+        Answer persisted = new Answer();
+        persisted.setId(100L);
+        persisted.setLatitude(47.3769);
+        persisted.setLongitude(8.5417);
+        persisted.setRound(round);
+        persisted.setPlayer(player);
+        persisted.setSubmittedAt(Instant.parse("2026-05-03T12:00:00Z"));
+        persisted.setScoreResult(ScoreResult.CORRECT_CITY);
+        persisted.setPointsAwarded(2000);
+
+        given(roundService.submitAnswer(
+                Mockito.eq("AB-1234"),
+                Mockito.eq(10L),
+                Mockito.eq(7L),
+                Mockito.eq(47.3769),
+                Mockito.eq(8.5417)))
+                .willReturn(persisted);
+
+        // when — POST /lobbies/AB-1234/rounds/10/answers
+        MockHttpServletRequestBuilder req = post(
+                "/lobbies/{code}/rounds/{roundId}/answers", "AB-1234", 10L)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(asJsonString(body));
+
+        // then — 201 + AnswerGetDTO JSON with id + coords + score
+        mockMvc.perform(req)
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id", is(100)))
+                .andExpect(jsonPath("$.latitude", is(47.3769)))
+                .andExpect(jsonPath("$.longitude", is(8.5417)))
+                .andExpect(jsonPath("$.scoreResult", is("CORRECT_CITY")))
+                .andExpect(jsonPath("$.pointsAwarded", is(2000)));
+    }
+
+    /**
+     * US10 — GET /lobbies/{code}/rounds/{roundId}/summary endpoint.
+     *
+     * Returns the round summary screen's data: correct city / country /
+     * coords, plus the live leaderboard sorted by total score. Powered
+     * by RoundService.getRoundSummary which builds the DTO from the
+     * round + ScoringService.getStandings(...). Service is mocked here
+     * — this test verifies the HTTP wiring and the JSON shape so the
+     * frontend's summary overlay can rely on the field names.
+     */
+    @Test
+    public void getRoundSummary_existingRound_returns200WithRoundSummaryGetDTO() throws Exception {
+        // given — service returns a populated DTO with one player on the leaderboard
+        RoundSummaryGetDTO dto = new RoundSummaryGetDTO();
+        dto.setRoundId(10L);
+        dto.setCorrectCity("Zurich");
+        dto.setCorrectCountry("Switzerland");
+        dto.setCorrectLatitude(47.3769);
+        dto.setCorrectLongitude(8.5417);
+
+        ScoringService.PlayerStanding standing =
+                new ScoringService.PlayerStanding(7L, "guest", 2000);
+        dto.setStandings(List.of(standing));
+
+        given(roundService.getRoundSummary("AB-1234", 10L)).willReturn(dto);
+
+        // when / then — GET returns 200 + the DTO echoed as JSON
+        mockMvc.perform(get("/lobbies/{code}/rounds/{roundId}/summary", "AB-1234", 10L))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.roundId", is(10)))
+                .andExpect(jsonPath("$.correctCity", is("Zurich")))
+                .andExpect(jsonPath("$.correctCountry", is("Switzerland")))
+                .andExpect(jsonPath("$.correctLatitude", is(47.3769)))
+                .andExpect(jsonPath("$.correctLongitude", is(8.5417)))
+                .andExpect(jsonPath("$.standings[0].username", is("guest")))
+                .andExpect(jsonPath("$.standings[0].totalScore", is(2000)));
     }
 
     /**

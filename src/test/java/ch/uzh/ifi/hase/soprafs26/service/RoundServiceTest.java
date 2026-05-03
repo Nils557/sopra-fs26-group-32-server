@@ -1,9 +1,11 @@
 package ch.uzh.ifi.hase.soprafs26.service;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -33,8 +35,11 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.server.ResponseStatusException;
 
+import ch.uzh.ifi.hase.soprafs26.constant.ScoreResult;
+import ch.uzh.ifi.hase.soprafs26.entity.Answer;
 import ch.uzh.ifi.hase.soprafs26.entity.Lobby;
 import ch.uzh.ifi.hase.soprafs26.entity.Round;
+import ch.uzh.ifi.hase.soprafs26.entity.User;
 import ch.uzh.ifi.hase.soprafs26.repository.AnswerRepository;
 import ch.uzh.ifi.hase.soprafs26.repository.LobbyRepository;
 import ch.uzh.ifi.hase.soprafs26.repository.RoundRepository;
@@ -86,6 +91,7 @@ public class RoundServiceTest {
 
     @Mock
     private GeocodingService geocodingService; // Add this line with the other @Mocks
+    private ScoringService scoringService;
 
     @InjectMocks
     private RoundService roundService;
@@ -506,5 +512,356 @@ public class RoundServiceTest {
                         roundService, "locationsDataset");
         assertNotNull(dataset, "locationsDataset must be initialised");
         assertFalse(dataset.isEmpty(), "locations.json must load at least one curated location");
+    }
+
+
+    // -------------------------------------------------------------------
+    // submitAnswer — US7 #102 (POST /round/guess endpoint logic)
+    // -------------------------------------------------------------------
+
+    /**
+     * US7 #102 / US9 #146 — Happy path: a valid pin submission persists
+     * an Answer with the calculated score and is returned to the caller.
+     *
+     * Wires through the entire submitAnswer flow:
+     *   1. Inputs validated (non-null, in range)
+     *   2. Lobby + Round + Player looked up
+     *   3. Double-submit guard checked
+     *   4. Answer persisted with player + round + coords + submittedAt
+     *   5. Score computed via Answer.calculateScoreBasedOnDistance
+     *      (delegates to ScoringService — math exercised in ScoringServiceTest)
+     *   6. WS broadcasts on /answers (US11) and /scores (US9 #147) fire
+     *
+     * The unit-level scoring math is exercised in ScoringServiceTest
+     * and the Haversine math in DistanceCalculatorTest. This test
+     * verifies the wire-through and that the score lands on the entity.
+     */
+    @Test
+    public void submitAnswer_validInput_persistsAnswerWithCalculatedScore() {
+        // given — a 2-player lobby, an active round, the guest submitting a perfect pin
+        User host = new User(); host.setId(1L); host.setUsername("host");
+        User guest = new User(); guest.setId(2L); guest.setUsername("guest");
+
+        Lobby lobby = new Lobby();
+        lobby.setLobbyCode("AB-1234");
+        lobby.setTotalRounds(3);
+        lobby.getPlayers().add(host);
+        lobby.getPlayers().add(guest);
+
+        Round round = new Round();
+        round.setId(10L);
+        round.setLobbyCode("AB-1234");
+        round.setTargetLatitude(47.3769);
+        round.setTargetLongitude(8.5417);
+
+        when(lobbyRepository.findByLobbyCode("AB-1234")).thenReturn(lobby);
+        when(roundRepository.findById(10L)).thenReturn(Optional.of(round));
+        when(userRepository.findById(2L)).thenReturn(Optional.of(guest));
+        when(answerRepository.existsByRoundIdAndPlayerId(10L, 2L)).thenReturn(false);
+        when(answerRepository.save(any(Answer.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        // findByRoundId returns 1 answer (just the new one) — early-end branch must NOT fire
+        Answer thisAnswer = new Answer(); thisAnswer.setPlayer(guest);
+        when(answerRepository.findByRoundId(10L)).thenReturn(List.of(thisAnswer));
+
+        // ScoringService is mocked — its math is exercised by ScoringServiceTest
+        when(scoringService.calculateScore(47.3769, 8.5417, 47.3769, 8.5417)).thenReturn(2000);
+        when(scoringService.getScoreResult(47.3769, 8.5417, 47.3769, 8.5417))
+                .thenReturn(ScoreResult.CORRECT_CITY);
+        when(scoringService.getStandings("AB-1234")).thenReturn(List.of());
+
+        // when — guest submits a pin exactly on the target
+        Answer result = roundService.submitAnswer("AB-1234", 10L, 2L, 47.3769, 8.5417);
+
+        // then — the persisted answer carries the right player, coords, and a top-band score
+        assertNotNull(result, "submitAnswer must return the persisted Answer");
+        assertEquals(guest, result.getPlayer(), "answer.player must be the submitting user");
+        assertEquals(round, result.getRound(), "answer.round must be the active round");
+        assertEquals(47.3769, result.getLatitude());
+        assertEquals(8.5417, result.getLongitude());
+        assertNotNull(result.getSubmittedAt(), "submittedAt must be stamped");
+        assertEquals(ScoreResult.CORRECT_CITY, result.getScoreResult());
+        assertEquals(2000, result.getPointsAwarded());
+
+        verify(answerRepository).save(any(Answer.class));
+    }
+
+    /**
+     * US7 #102 / US9 #146 — Validation: unknown lobby code returns 404.
+     *
+     * Representative validation test for the submitAnswer endpoint.
+     * Protects against a client with a stale code or a fabricated
+     * request. The service must not proceed to look up a round under
+     * a non-existent lobby. The other validation branches (null
+     * fields, coord bounds, round-not-found, already-finished,
+     * already-answered, etc.) follow the same pattern.
+     */
+    @Test
+    public void submitAnswer_lobbyNotFound_throws404() {
+        when(lobbyRepository.findByLobbyCode("XX-0000")).thenReturn(null);
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> roundService.submitAnswer("XX-0000", 10L, 1L, 0.0, 0.0));
+        assertEquals(404, ex.getStatusCode().value());
+
+        verify(roundRepository, never()).findById(any());
+        verify(answerRepository, never()).save(any(Answer.class));
+    }
+
+    // -------------------------------------------------------------------
+    // US8 — 45s round timer + auto-end + early end + broadcasts
+    // -------------------------------------------------------------------
+
+    /**
+     * US8 #109 — 45-second round timer is set up on the backend.
+     *
+     * When startRoundWithTimer runs, it calls startCountdownTimer which
+     * schedules a per-second countdown task on the ScheduledExecutorService
+     * and registers the resulting future in activeCountdownTimers, keyed
+     * by lobby code. We can verify the future was registered (via
+     * reflection on the private map). The "45 seconds" initial value is
+     * encoded in a local `final int[] timeLeft = {45}` inside the
+     * scheduler lambda — observable only by waiting for the first tick,
+     * which we don't do here to keep the test deterministic.
+     *
+     * We cancel both schedulers in finally so background threads from
+     * the 9-second image rotation and the 1-second countdown don't leak
+     * into other tests.
+     */
+    @SuppressWarnings("unchecked")
+    @Test
+    public void startRoundWithTimer_registersCountdownFutureFor45SecondTimer() {
+        // given
+        seedDataset(new RoundService.CuratedLocation(40.0, -74.0, "NYC"));
+        when(mapillaryService.getImageSequence(anyDouble(), anyDouble(), anyDouble(), anyDouble(), eq(5)))
+                .thenReturn(Arrays.asList("u0", "u1", "u2", "u3", "u4"));
+        when(roundRepository.save(any(Round.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Lobby lobby = new Lobby();
+        lobby.setLobbyCode("AB-1234");
+        lobby.setTotalRounds(3);
+        when(lobbyRepository.findByLobbyCode("AB-1234")).thenReturn(lobby);
+
+        Round savedRound = new Round();
+        savedRound.setLobbyCode("AB-1234");
+        when(roundRepository.findByLobbyCode("AB-1234")).thenReturn(List.of(savedRound));
+
+        try {
+            // when
+            roundService.startRoundWithTimer("AB-1234");
+
+            // then — the countdown future is registered, proving the per-second
+            // timer task was scheduled (and therefore the 45 → 0 countdown will run).
+            Map<String, ?> activeCountdown = (Map<String, ?>)
+                    ReflectionTestUtils.getField(roundService, "activeCountdownTimers");
+            assertNotNull(activeCountdown, "activeCountdownTimers field must be reachable");
+            assertTrue(activeCountdown.containsKey("AB-1234"),
+                    "a countdown future must be registered for the lobby after startRoundWithTimer");
+        } finally {
+            // Cancel both background tasks so they don't outlive the test
+            roundService.stopCountdownTimer("AB-1234");
+            roundService.stopTimer("AB-1234");
+        }
+    }
+
+    /**
+     * US8 #110 / #111 / #112 — Early round end: when the LAST player
+     * submits, the round ends immediately for everyone AND the
+     * "ROUND_ENDED" event is broadcast on /topic/game/{code}/roundEnd.
+     *
+     * This single test covers three dev tasks:
+     *   - #111 (early-end trigger condition: all players answered)
+     *   - #110 (round-end behavior: the synchronous side effect of
+     *     handleRoundEnd that flips finished=true; the timer-zero path
+     *     reaches the same handleRoundEnd, so testing the behavior
+     *     here also covers the auto-end-at-zero outcome)
+     *   - #112 (round-end broadcast: the "ROUND_ENDED" message on the
+     *     /roundEnd topic — the per-second timer-tick portion of #112
+     *     fires inside a scheduler lambda and is verified at integration
+     *     time only)
+     *
+     * Note: handleRoundEnd schedules a 4-second next-round / game-over
+     * task on the real ScheduledExecutorService. That task fires after
+     * the test completes; the mocks it eventually hits are no-op stubs
+     * by default, so it can't pollute later assertions.
+     */
+    @Test
+    public void submitAnswer_lastPlayerAnswered_triggersEarlyRoundEndAndBroadcastsRoundEndedEvent() {
+        // given — 2-player lobby, host already answered, guest now submitting
+        User host = new User(); host.setId(1L); host.setUsername("host");
+        User guest = new User(); guest.setId(2L); guest.setUsername("guest");
+
+        Lobby lobby = new Lobby();
+        lobby.setLobbyCode("AB-1234");
+        lobby.setTotalRounds(1);  // single-round game so the deferred task takes the GAME_OVER branch
+        lobby.getPlayers().add(host);
+        lobby.getPlayers().add(guest);
+
+        Round round = new Round();
+        round.setId(10L);
+        round.setLobbyCode("AB-1234");
+        round.setTargetLatitude(0.0);
+        round.setTargetLongitude(0.0);
+
+        when(lobbyRepository.findByLobbyCode("AB-1234")).thenReturn(lobby);
+        when(roundRepository.findById(10L)).thenReturn(Optional.of(round));
+        when(userRepository.findById(2L)).thenReturn(Optional.of(guest));
+        when(answerRepository.existsByRoundIdAndPlayerId(10L, 2L)).thenReturn(false);
+        when(answerRepository.save(any(Answer.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        // After save, findByRoundId returns BOTH answers — host's prior + guest's new
+        Answer hostAnswer = new Answer(); hostAnswer.setPlayer(host);
+        Answer guestAnswer = new Answer(); guestAnswer.setPlayer(guest);
+        when(answerRepository.findByRoundId(10L))
+                .thenReturn(Arrays.asList(hostAnswer, guestAnswer));
+
+        // handleRoundEnd reads round count to decide game-over vs next round
+        when(roundRepository.findByLobbyCode("AB-1234")).thenReturn(List.of(round));
+
+        // ScoringService stubs (math is exercised in ScoringServiceTest)
+        when(scoringService.calculateScore(0.0, 0.0, 0.0, 0.0)).thenReturn(2000);
+        when(scoringService.getScoreResult(0.0, 0.0, 0.0, 0.0))
+                .thenReturn(ScoreResult.CORRECT_CITY);
+        when(scoringService.getStandings("AB-1234")).thenReturn(List.of());
+
+        // when
+        roundService.submitAnswer("AB-1234", 10L, 2L, 0.0, 0.0);
+
+        // then — round is marked finished (synchronous side effect of handleRoundEnd)
+        assertTrue(round.isFinished(),
+                "round must be marked finished when the last player answers");
+
+        // and the round-end broadcast went out on the right game-scoped topic with "ROUND_ENDED"
+        verify(messagingTemplate).convertAndSend(
+                eq("/topic/game/AB-1234/roundEnd"),
+                eq((Object) "ROUND_ENDED"));
+    }
+
+    /**
+     * US8 #111 — Negative case: when not all players have answered, the
+     * round does NOT end early.
+     *
+     * Pairs with the previous test to lock down the comparison
+     * direction: the early-end trigger requires `answeredPlayers >=
+     * totalPlayers`, not `answeredPlayers > 0` or any other off-by-one
+     * variant. A regression that ended the round on the first answer
+     * would silently make the game unplayable for groups of 3+.
+     */
+    @Test
+    public void submitAnswer_notLastPlayer_doesNotTriggerEarlyEnd() {
+        // given — 3-player lobby, this is only the 2nd answer
+        User u1 = new User(); u1.setId(1L); u1.setUsername("u1");
+        User u2 = new User(); u2.setId(2L); u2.setUsername("u2");
+        User u3 = new User(); u3.setId(3L); u3.setUsername("u3");
+
+        Lobby lobby = new Lobby();
+        lobby.setLobbyCode("AB-1234");
+        lobby.setTotalRounds(3);
+        lobby.getPlayers().add(u1);
+        lobby.getPlayers().add(u2);
+        lobby.getPlayers().add(u3);
+
+        Round round = new Round();
+        round.setId(10L);
+        round.setLobbyCode("AB-1234");
+        round.setTargetLatitude(0.0);
+        round.setTargetLongitude(0.0);
+
+        when(lobbyRepository.findByLobbyCode("AB-1234")).thenReturn(lobby);
+        when(roundRepository.findById(10L)).thenReturn(Optional.of(round));
+        when(userRepository.findById(2L)).thenReturn(Optional.of(u2));
+        when(answerRepository.existsByRoundIdAndPlayerId(10L, 2L)).thenReturn(false);
+        when(answerRepository.save(any(Answer.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        // After save: 2 answers for 3 players — early end MUST NOT fire
+        Answer a1 = new Answer(); a1.setPlayer(u1);
+        Answer a2 = new Answer(); a2.setPlayer(u2);
+        when(answerRepository.findByRoundId(10L)).thenReturn(Arrays.asList(a1, a2));
+
+        when(scoringService.calculateScore(0.0, 0.0, 0.0, 0.0)).thenReturn(2000);
+        when(scoringService.getScoreResult(0.0, 0.0, 0.0, 0.0))
+                .thenReturn(ScoreResult.CORRECT_CITY);
+        when(scoringService.getStandings("AB-1234")).thenReturn(List.of());
+
+        // when
+        roundService.submitAnswer("AB-1234", 10L, 2L, 0.0, 0.0);
+
+        // then — round still active, no roundEnd broadcast
+        assertFalse(round.isFinished(),
+                "round must NOT be finished — only 2 of 3 players have answered");
+        verify(messagingTemplate, never()).convertAndSend(
+                eq("/topic/game/AB-1234/roundEnd"), any(Object.class));
+    }
+
+    // -------------------------------------------------------------------
+    // US9 — Scoring broadcast (#147)
+    // (US9 #143 ScoringService and #146 POST endpoint coverage lives in
+    //  ScoringServiceTest and submitAnswer tests above respectively.)
+    // -------------------------------------------------------------------
+
+    /**
+     * US9 #147 — After an answer is saved, the service broadcasts the
+     * live leaderboard to /topic/lobby/{code}/scores.
+     *
+     * The payload is whatever ScoringService.getStandings(lobbyCode)
+     * returns — a sorted list of PlayerStanding records (id / username
+     * / totalScore). The frontend can subscribe to this topic to drive
+     * a live scoreboard during the round (also a US10 / US12
+     * prerequisite).
+     *
+     * The aggregation logic (the SUM(points_awarded) GROUP BY player_id
+     * query) is exercised by ScoringServiceTest separately. Here we
+     * verify the wiring: the broadcast goes to the right topic, with
+     * the standings list reaching the wire intact.
+     */
+    @Test
+    public void submitAnswer_validInput_broadcastsLeaderboardToScoresTopic() {
+        // given — same minimal setup as the answers-broadcast happy path
+        User host = new User(); host.setId(1L); host.setUsername("host");
+        User guest = new User(); guest.setId(2L); guest.setUsername("guest");
+
+        Lobby lobby = new Lobby();
+        lobby.setLobbyCode("AB-1234");
+        lobby.setTotalRounds(3);
+        lobby.getPlayers().add(host);
+        lobby.getPlayers().add(guest);
+
+        Round round = new Round();
+        round.setId(10L);
+        round.setLobbyCode("AB-1234");
+        round.setTargetLatitude(0.0);
+        round.setTargetLongitude(0.0);
+
+        when(lobbyRepository.findByLobbyCode("AB-1234")).thenReturn(lobby);
+        when(roundRepository.findById(10L)).thenReturn(Optional.of(round));
+        when(userRepository.findById(2L)).thenReturn(Optional.of(guest));
+        when(answerRepository.existsByRoundIdAndPlayerId(10L, 2L)).thenReturn(false);
+        when(answerRepository.save(any(Answer.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Answer thisAnswer = new Answer(); thisAnswer.setPlayer(guest);
+        when(answerRepository.findByRoundId(10L)).thenReturn(List.of(thisAnswer));
+
+        when(scoringService.calculateScore(0.0, 0.0, 0.0, 0.0)).thenReturn(2000);
+        when(scoringService.getScoreResult(0.0, 0.0, 0.0, 0.0))
+                .thenReturn(ScoreResult.CORRECT_CITY);
+        // Non-empty standings so the broadcast payload is meaningful
+        ScoringService.PlayerStanding standing =
+                new ScoringService.PlayerStanding(2L, "guest", 2000);
+        when(scoringService.getStandings("AB-1234")).thenReturn(List.of(standing));
+
+        // when
+        roundService.submitAnswer("AB-1234", 10L, 2L, 0.0, 0.0);
+
+        // then — broadcast went to /scores with the standings list
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        ArgumentCaptor<List> captor = ArgumentCaptor.forClass(List.class);
+        verify(messagingTemplate).convertAndSend(
+                eq("/topic/lobby/AB-1234/scores"),
+                (Object) captor.capture());
+        List<?> payload = captor.getValue();
+        assertEquals(1, payload.size(),
+                "scores broadcast payload should carry the standings list");
+        assertEquals(ScoringService.PlayerStanding.class, payload.get(0).getClass(),
+                "scores broadcast must carry PlayerStanding records");
     }
 }
