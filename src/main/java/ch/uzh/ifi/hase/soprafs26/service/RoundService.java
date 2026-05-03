@@ -160,7 +160,7 @@ public class RoundService {
             
             try { 
                 // Try our luck with a random city
-                Round round = tryCreateRound(lobbyCode, selectedLocation.getLatitude(), selectedLocation.getLongitude(), 0.05);
+                Round round = tryCreateRound(lobbyCode, selectedLocation.getLatitude(), selectedLocation.getLongitude(), 0.002);
                 
                 // If the line above doesn't throw an error, it succeeded!
                 System.out.println("Game started in: " + selectedLocation.getName());
@@ -178,7 +178,7 @@ public class RoundService {
         
         try {
             // Zurich HB coordinates are guaranteed to have thousands of Mapillary images
-            Round fallbackRound = tryCreateRound(lobbyCode, 47.3769, 8.5417, 0.005);
+            Round fallbackRound = tryCreateRound(lobbyCode, 47.3769, 8.5417, 0.001);
             System.out.println("Fail-safe successful: Game started in Zurich.");
             return fallbackRound;
 
