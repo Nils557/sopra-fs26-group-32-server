@@ -12,6 +12,8 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.ClassPathResource;
@@ -54,6 +56,8 @@ public class RoundService {
     private final AnswerRepository answerRepository;
     private final ScoringService scoringService;
     private final Map<String, Round> preloadedRounds = new ConcurrentHashMap<>();
+    private final Logger log = LoggerFactory.getLogger(RoundService.class);
+
 
     // This list will hold all 200+ coordinates in memory for instant access
     private List<CuratedLocation> locationsDataset = new ArrayList<>();
@@ -127,14 +131,12 @@ public class RoundService {
                 preloaded.setTargetLongitude(selectedLocation.getLongitude());
                 preloaded.setImageSequence(imageUrls);
 
-                // Park it in memory for later
                 preloadedRounds.put(lobbyCode, preloaded);
-                System.out.println("Successfully preloaded next round for lobby: " + lobbyCode);
+                
+                log.info("PRELOAD SUCCESS: Images for lobby {} successfully buffered in memory.", lobbyCode);
 
             } catch (Exception e) {
-                // If it fails in the background, we just silently ignore it. 
-                // The main thread will fall back to synchronous fetching later
-                System.out.println("Background preload failed, will fallback to sync later.");
+                log.error("PRELOAD FAILED for lobby {}. Will fallback to synchronous fetch. Reason: {}", lobbyCode, e.getMessage());
             }
         });
     }
@@ -249,6 +251,8 @@ public class RoundService {
         
         // Only preload Image URL's if we actually have more rounds left to play
         if (roundNumber < totalRounds) {
+            log.info("GAMEPLAY: Round {} started. Triggering background preload for Round {} in lobby {}", 
+                     roundNumber, roundNumber + 1, lobbyCode);
             preloadNextRoundAsync(lobbyCode);
         }
         return round;
