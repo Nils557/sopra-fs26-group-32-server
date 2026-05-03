@@ -25,6 +25,8 @@ import ch.uzh.ifi.hase.soprafs26.repository.UserRepository;
 import ch.uzh.ifi.hase.soprafs26.entity.Lobby;
 import ch.uzh.ifi.hase.soprafs26.entity.User;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.AnswerPostDTO;
+import ch.uzh.ifi.hase.soprafs26.rest.dto.RoundSummaryGetDTO;
+import ch.uzh.ifi.hase.soprafs26.rest.mapper.DTOMapper;
 import ch.uzh.ifi.hase.soprafs26.entity.Answer;
 import ch.uzh.ifi.hase.soprafs26.repository.AnswerRepository;
 
@@ -404,5 +406,16 @@ public Round createAndStartRound(String lobbyCode) {
                 }
             }, 4, TimeUnit.SECONDS);
         }
+    }
+
+    public RoundSummaryGetDTO getRoundSummary(String lobbyCode, Long roundId) {
+        Round round = roundRepository.findById(roundId)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Round not found"));
+
+        if (!round.getLobbyCode().equals(lobbyCode)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Round does not belong to this lobby");
+        }
+        List<ScoringService.PlayerStanding> standings = scoringService.getStandings(lobbyCode);
+        return DTOMapper.INSTANCE.convertToRoundSummaryGetDTO(round, standings);
     }
 }
