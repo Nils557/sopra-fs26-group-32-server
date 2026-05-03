@@ -11,8 +11,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import org.mockito.Mock;
+
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import org.mockito.MockitoAnnotations;
@@ -105,21 +108,27 @@ public class MapillaryServiceTest {
      * we would hammer Mapillary with invalid-token requests and
      * pollute their server logs.
      */
-    @Test
-    public void getImageSequence_blankToken_throws500AndDoesNotCallRestTemplate() {
-        // given — token gets wiped after setup
-        ReflectionTestUtils.setField(service, "accessToken", "");
+        @Test
+        public void getImageSequence_blankToken_throws500AndDoesNotCallRestTemplate() {
+                // 1. Force the token to be null for this test
+                ReflectionTestUtils.setField(service, "accessToken", null);
 
-        // when / then
-        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                () -> service.getImageSequence(0.0, 0.0, 1.0, 1.0, 5));
-        assertEquals(500, ex.getStatusCode().value());
+                // 2. Expect a ResponseStatusException to be thrown
+                ResponseStatusException exception = assertThrows(ResponseStatusException.class, () -> {
+                service.getImageSequence(8.5, 47.3, 8.6, 47.4, 5);
+                });
 
-        // and critically: no HTTP call was made
-        verify(restTemplate, org.mockito.Mockito.never())
-                .exchange(any(String.class), eq(HttpMethod.GET),
-                          any(HttpEntity.class), eq(String.class));
-    }
+                // 3. Verify it's a 500 error
+                assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, exception.getStatusCode());
+
+                // 4. Verify that the RestTemplate was NEVER called (since it crashed first)
+                verify(restTemplate, never()).exchange(
+                        anyString(),
+                        eq(HttpMethod.GET),
+                        any(),
+                        eq(String.class)
+                );
+        }
 
     /**
      * US6 #131 — Not-enough-images branch.
@@ -132,22 +141,22 @@ public class MapillaryServiceTest {
      */
     @Test
     public void getImageSequence_notEnoughImages_throws() {
-        // 1. Provide only 3 images
+        // given — response has only 1 image, caller wants 5
         String body = "{\"data\":["
                 + "{\"thumb_1024_url\":\"u1\", \"sequence_id\":\"seq1\"},"
                 + "{\"thumb_1024_url\":\"u2\", \"sequence_id\":\"seq2\"},"
                 + "{\"thumb_1024_url\":\"u3\", \"sequence_id\":\"seq3\"}"
                 + "]}";
+        when(restTemplate.exchange(
+                        any(String.class), 
+                        eq(HttpMethod.GET),
+                        any(HttpEntity.class), 
+                        eq(String.class)
+                )).thenReturn(new ResponseEntity<>(body, HttpStatus.OK));
 
-        // 2. Use the exact same mock matching syntax that passed your first test
-        when(restTemplate.exchange(any(String.class), eq(HttpMethod.GET),
-                any(HttpEntity.class), eq(String.class)))
-                .thenReturn(new ResponseEntity<>(body, HttpStatus.OK));
-
-        // 3. Ask for 5. Pass 3 will catch it and throw the exception!
-        assertThrows(ResponseStatusException.class, () -> {
-            service.getImageSequence(0.0, 0.0, 1.0, 1.0, 5); 
-        });
+        // when / then
+        assertThrows(ResponseStatusException.class,
+                () -> service.getImageSequence(0.0, 0.0, 1.0, 1.0, 5));
     }
 
     /**

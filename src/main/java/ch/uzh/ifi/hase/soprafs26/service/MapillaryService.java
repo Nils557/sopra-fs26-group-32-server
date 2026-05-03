@@ -81,8 +81,9 @@ public class MapillaryService {
     }
 
     public List<String> getImageSequence(double minLon, double minLat, double maxLon, double maxLat, int count) {
-        if (accessToken == null || accessToken.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Mapillary API token not configured.");
+        if (accessToken == null || accessToken.isBlank() || accessToken.equals("<MAPILLARY_ACCESS_TOKEN>")) {
+                    log.error("Mapillary API token is missing or invalid.");
+                    throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Mapillary API token is not configured.");
         }
 
         String url = String.format(Locale.US, "%s/images?fields=id,thumb_1024_url,sequence_id&limit=1000&bbox=%f,%f,%f,%f",

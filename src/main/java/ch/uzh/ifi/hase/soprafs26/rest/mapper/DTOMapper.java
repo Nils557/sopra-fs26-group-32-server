@@ -79,8 +79,8 @@ public interface DTOMapper {
     @Mapping(source = "round.id", target = "roundId")
     @Mapping(source = "round.targetLatitude", target = "correctLatitude")
     @Mapping(source = "round.targetLongitude", target = "correctLongitude")
-    @Mapping(target = "correctCity", constant = "Mystery City") // Placeholder since we skipped Geocoding
-    @Mapping(target = "correctCountry", constant = "Mystery Country") // Placeholder
+@Mapping(source = "round.targetCity", target = "correctCity")
+    @Mapping(source = "round.targetCountry", target = "correctCountry") 
     @Mapping(source = "standings", target = "standings")
     RoundSummaryGetDTO convertToRoundSummaryGetDTO(Round round, List<ScoringService.PlayerStanding> standings);
 }

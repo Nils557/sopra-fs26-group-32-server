@@ -28,6 +28,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.anyDouble;
+import static org.mockito.Mockito.when;
 import org.mockito.MockitoAnnotations;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -42,6 +44,7 @@ import ch.uzh.ifi.hase.soprafs26.repository.AnswerRepository;
 import ch.uzh.ifi.hase.soprafs26.repository.LobbyRepository;
 import ch.uzh.ifi.hase.soprafs26.repository.RoundRepository;
 import ch.uzh.ifi.hase.soprafs26.repository.UserRepository;
+import ch.uzh.ifi.hase.soprafs26.rest.dto.LocationResult;
 
 
 /**
@@ -89,6 +92,9 @@ public class RoundServiceTest {
     @Mock
     private ScoringService scoringService;
 
+    @Mock
+    private GeocodingService geocodingService; 
+
     @InjectMocks
     private RoundService roundService;
 
@@ -103,6 +109,8 @@ public class RoundServiceTest {
     private void seedDataset(RoundService.CuratedLocation... locations) {
         List<RoundService.CuratedLocation> dataset = new ArrayList<>(Arrays.asList(locations));
         ReflectionTestUtils.setField(roundService, "locationsDataset", dataset);
+        when(geocodingService.resolveLocation(anyDouble(), anyDouble()))
+            .thenReturn(new LocationResult("Test City", "Test Country"));
     }
 
     // -------------------------------------------------------------------
@@ -129,6 +137,8 @@ public class RoundServiceTest {
         when(mapillaryService.getImageSequence(anyDouble(), anyDouble(), anyDouble(), anyDouble(), eq(5)))
                 .thenReturn(urls);
         when(roundRepository.save(any(Round.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(geocodingService.resolveLocation(anyDouble(), anyDouble()))
+                .thenReturn(new ch.uzh.ifi.hase.soprafs26.rest.dto.LocationResult("NYC", "USA"));
 
         // when
         Round round = roundService.createAndStartRound("AB-1234");
@@ -557,8 +567,8 @@ public class RoundServiceTest {
         when(answerRepository.findByRoundId(10L)).thenReturn(List.of(thisAnswer));
 
         // ScoringService is mocked — its math is exercised by ScoringServiceTest
-        when(scoringService.calculateScore(47.3769, 8.5417, 47.3769, 8.5417)).thenReturn(2000);
-        when(scoringService.getScoreResult(47.3769, 8.5417, 47.3769, 8.5417))
+        when(scoringService.calculateScore(anyDouble(), anyDouble(), any(Round.class))).thenReturn(2000);
+        when(scoringService.getScoreResult(anyDouble(), anyDouble(), any(Round.class)))
                 .thenReturn(ScoreResult.CORRECT_CITY);
         when(scoringService.getStandings("AB-1234")).thenReturn(List.of());
 
@@ -711,8 +721,8 @@ public class RoundServiceTest {
         when(roundRepository.findByLobbyCode("AB-1234")).thenReturn(List.of(round));
 
         // ScoringService stubs (math is exercised in ScoringServiceTest)
-        when(scoringService.calculateScore(0.0, 0.0, 0.0, 0.0)).thenReturn(2000);
-        when(scoringService.getScoreResult(0.0, 0.0, 0.0, 0.0))
+        when(scoringService.calculateScore(anyDouble(), anyDouble(), any(Round.class))).thenReturn(2000);
+        when(scoringService.getScoreResult(anyDouble(), anyDouble(), any(Round.class)))
                 .thenReturn(ScoreResult.CORRECT_CITY);
         when(scoringService.getStandings("AB-1234")).thenReturn(List.of());
 
@@ -770,8 +780,8 @@ public class RoundServiceTest {
         Answer a2 = new Answer(); a2.setPlayer(u2);
         when(answerRepository.findByRoundId(10L)).thenReturn(Arrays.asList(a1, a2));
 
-        when(scoringService.calculateScore(0.0, 0.0, 0.0, 0.0)).thenReturn(2000);
-        when(scoringService.getScoreResult(0.0, 0.0, 0.0, 0.0))
+        when(scoringService.calculateScore(anyDouble(), anyDouble(), any(Round.class))).thenReturn(2000);
+        when(scoringService.getScoreResult(anyDouble(), anyDouble(), any(Round.class)))
                 .thenReturn(ScoreResult.CORRECT_CITY);
         when(scoringService.getStandings("AB-1234")).thenReturn(List.of());
 
@@ -833,8 +843,8 @@ public class RoundServiceTest {
         Answer thisAnswer = new Answer(); thisAnswer.setPlayer(guest);
         when(answerRepository.findByRoundId(10L)).thenReturn(List.of(thisAnswer));
 
-        when(scoringService.calculateScore(0.0, 0.0, 0.0, 0.0)).thenReturn(2000);
-        when(scoringService.getScoreResult(0.0, 0.0, 0.0, 0.0))
+        when(scoringService.calculateScore(anyDouble(), anyDouble(), any(Round.class))).thenReturn(2000);
+        when(scoringService.getScoreResult(anyDouble(), anyDouble(), any(Round.class)))
                 .thenReturn(ScoreResult.CORRECT_CITY);
         // Non-empty standings so the broadcast payload is meaningful
         ScoringService.PlayerStanding standing =

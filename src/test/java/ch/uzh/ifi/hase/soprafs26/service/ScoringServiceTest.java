@@ -5,10 +5,16 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
+import ch.uzh.ifi.hase.soprafs26.entity.Round;
 import ch.uzh.ifi.hase.soprafs26.repository.AnswerRepository;
 import ch.uzh.ifi.hase.soprafs26.repository.LobbyRepository;
+import ch.uzh.ifi.hase.soprafs26.rest.dto.LocationResult;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyDouble;
+import static org.mockito.Mockito.when;
 
 /**
  * Unit tests for ScoringService (US7 #104).
@@ -31,10 +37,13 @@ public class ScoringServiceTest {
 
     private ScoringService scoringService;
 
+    @Mock
+    private GeocodingService geocodingService; 
+
     @BeforeEach
     public void setup() {
         MockitoAnnotations.openMocks(this);
-        scoringService = new ScoringService(answerRepository, lobbyRepository);
+        scoringService = new ScoringService(answerRepository, lobbyRepository, geocodingService);
     }
 
     /**
@@ -48,8 +57,23 @@ public class ScoringServiceTest {
      */
     @Test
     public void calculateScore_atTarget_returns2000() {
-        int score = scoringService.calculateScore(47.3769, 8.5417, 47.3769, 8.5417);
-        assertEquals(2000, score, "perfect guess must award the maximum 2000 points");
+        // 1. Arrange: Create a real Round object
+        Round dummyRound = new Round();
+        dummyRound.setTargetLatitude(47.3769);
+        dummyRound.setTargetLongitude(8.5417);
+        dummyRound.setTargetCity("Zurich");
+        dummyRound.setTargetCountry("Switzerland");
+
+        // 2. Arrange: Stub the geocoding mock to return a valid location
+        // Use ArgumentMatchers.anyDouble() inside the stubbing
+        LocationResult mockResult = new LocationResult("Zurich", "Switzerland");
+        when(geocodingService.resolveLocation(anyDouble(), anyDouble())).thenReturn(mockResult);
+
+        // 3. Act: Execute the real service call with real objects
+        int score = scoringService.calculateScore(47.3769, 8.5417, dummyRound);
+
+        // 4. Assert
+        assertEquals(2000, score);
     }
 
     /**
@@ -57,9 +81,28 @@ public class ScoringServiceTest {
      * boundary (~2000 km away) returns exactly 0 points.
      */
     @Test
-    public void calculateScore_pastCountryBoundary_returnsZero() {
-        // 18° lat at equator ≈ 2001 km — well past the 1000 km country boundary
-        int score = scoringService.calculateScore(18.0, 0.0, 0.0, 0.0);
-        assertEquals(0, score, "guesses past 1000 km must give exactly 0 points");
+    public void calculateScore_pastCountryBoundary_returnsProximityScore() {
+        // 1. Arrange: Target is in Zurich, Switzerland
+        Round round = new Round();
+        round.setTargetLatitude(47.3769);
+        round.setTargetLongitude(8.5417);
+        round.setTargetCountry("Switzerland");
+        round.setTargetCity("Zurich");
+
+        // 2. STUB: Force the guess to be in a DIFFERENT country (e.g., Germany)
+        // We'll simulate a guess in Berlin (roughly 670km away)
+        LocationResult germanyResult = new LocationResult("Berlin", "Germany");
+        when(geocodingService.resolveLocation(anyDouble(), anyDouble()))
+            .thenReturn(germanyResult);
+
+        // 3. Act: Guessing Berlin coordinates
+        int score = scoringService.calculateScore(52.5200, 13.4050, round);
+
+        // 4. Assert: 
+        // Based on your formula: 800 - (670 * 0.1) = ~733
+        // We verify it's greater than 0 but less than the country penalty threshold (1000)
+        assertTrue(score > 0, "Score should be greater than 0 for a close guess in a different country");
+        assertTrue(score < 1000, "Score should be below the country threshold");
+        assertEquals(733, score, "Score should match the proximity decay for the distance between Berlin and Zurich");
     }
 }
