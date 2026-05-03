@@ -385,6 +385,11 @@ public Round createAndStartRound(String lobbyCode) {
             "ROUND_ENDED"
         );
         System.out.println("Round ended for lobby: " + lobbyCode);
+        RoundSummaryGetDTO summaryPayload = getRoundSummary(lobbyCode, round.getId());
+        messagingTemplate.convertAndSend(
+            "/topic/lobby/" + lobbyCode + "/summary", 
+            summaryPayload
+        );
 
         Lobby lobby = lobbyRepository.findByLobbyCode(lobbyCode);
         if (lobby != null) {
