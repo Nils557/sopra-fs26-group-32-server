@@ -1,15 +1,17 @@
 package ch.uzh.ifi.hase.soprafs26.service;
 
-import ch.uzh.ifi.hase.soprafs26.constant.ScoreResult;
-import ch.uzh.ifi.hase.soprafs26.util.DistanceCalculator;
-import org.springframework.stereotype.Service;
-import ch.uzh.ifi.hase.soprafs26.repository.AnswerRepository;
-import ch.uzh.ifi.hase.soprafs26.repository.LobbyRepository;
-import ch.uzh.ifi.hase.soprafs26.entity.Lobby;
-import ch.uzh.ifi.hase.soprafs26.entity.Answer;
 import java.util.List;
 import java.util.stream.Collectors;
+
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import ch.uzh.ifi.hase.soprafs26.constant.ScoreResult;
+import ch.uzh.ifi.hase.soprafs26.entity.Answer;
+import ch.uzh.ifi.hase.soprafs26.entity.Lobby;
+import ch.uzh.ifi.hase.soprafs26.repository.AnswerRepository;
+import ch.uzh.ifi.hase.soprafs26.repository.LobbyRepository;
+import ch.uzh.ifi.hase.soprafs26.util.DistanceCalculator;
 
 @Service
 public class ScoringService {
@@ -59,18 +61,18 @@ public class ScoringService {
 
 
     public List<PlayerStanding> getStandings(String lobbyCode) {
-    Lobby lobby = lobbyRepository.findByLobbyCode(lobbyCode);
-    if (lobby == null) return List.of();
+        Lobby lobby = lobbyRepository.findByLobbyCode(lobbyCode);
+        if (lobby == null) return List.of();
 
-    return lobby.getPlayers().stream()
-        .map(p -> {
-            int totalScore = answerRepository.findByPlayerId(p.getId()).stream()
-                .mapToInt(Answer::getPointsAwarded)
-                .sum();
-            return new PlayerStanding(p.getId(), p.getUsername(), totalScore);
-        })
-        .sorted((a, b) -> b.totalScore - a.totalScore)
-        .collect(Collectors.toList());
+        return lobby.getPlayers().stream()
+            .map(p -> {
+                int totalScore = answerRepository.findByPlayerIdAndRound_LobbyCode(p.getId(), lobbyCode).stream()
+                    .mapToInt(Answer::getPointsAwarded)
+                    .sum();
+                return new PlayerStanding(p.getId(), p.getUsername(), totalScore);
+            })
+            .sorted((a, b) -> b.totalScore - a.totalScore)
+            .collect(Collectors.toList());
     }
 
     public static class PlayerStanding {
