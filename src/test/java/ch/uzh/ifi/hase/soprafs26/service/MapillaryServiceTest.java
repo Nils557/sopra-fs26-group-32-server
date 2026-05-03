@@ -1,9 +1,20 @@
 package ch.uzh.ifi.hase.soprafs26.service;
 
+import java.util.List;
+import java.util.Locale;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import org.mockito.Mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import org.mockito.MockitoAnnotations;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpMethod;
@@ -12,18 +23,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.server.ResponseStatusException;
-
-import java.util.List;
-import java.util.Locale;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 /**
  * Unit tests for MapillaryService.
@@ -73,12 +72,17 @@ public class MapillaryServiceTest {
     public void getImageSequence_validBbox_returnsRequestedCount() {
         // given — ten images in the mocked response, 5 requested
         String body = "{\"data\":["
-                + "{\"thumb_1024_url\":\"u1\"},{\"thumb_1024_url\":\"u2\"},"
-                + "{\"thumb_1024_url\":\"u3\"},{\"thumb_1024_url\":\"u4\"},"
-                + "{\"thumb_1024_url\":\"u5\"},{\"thumb_1024_url\":\"u6\"},"
-                + "{\"thumb_1024_url\":\"u7\"},{\"thumb_1024_url\":\"u8\"},"
-                + "{\"thumb_1024_url\":\"u9\"},{\"thumb_1024_url\":\"u10\"}"
-                + "]}";
+        + "{\"thumb_1024_url\":\"u1\", \"sequence_id\":\"seq1\"},"
+        + "{\"thumb_1024_url\":\"u2\", \"sequence_id\":\"seq2\"},"
+        + "{\"thumb_1024_url\":\"u3\", \"sequence_id\":\"seq3\"},"
+        + "{\"thumb_1024_url\":\"u4\", \"sequence_id\":\"seq4\"},"
+        + "{\"thumb_1024_url\":\"u5\", \"sequence_id\":\"seq5\"},"
+        + "{\"thumb_1024_url\":\"u6\", \"sequence_id\":\"seq6\"},"
+        + "{\"thumb_1024_url\":\"u7\", \"sequence_id\":\"seq7\"},"
+        + "{\"thumb_1024_url\":\"u8\", \"sequence_id\":\"seq8\" }," 
+        + "{\"thumb_1024_url\":\"u9\", \"sequence_id\":\"seq9\"},"
+        + "{\"thumb_1024_url\":\"u10\", \"sequence_id\":\"seq10\"}"
+        + "]}";
         when(restTemplate.exchange(any(String.class), eq(HttpMethod.GET),
                 any(HttpEntity.class), eq(String.class)))
                 .thenReturn(new ResponseEntity<>(body, HttpStatus.OK));
@@ -179,13 +183,20 @@ public class MapillaryServiceTest {
     public void getImageSequence_formatsBboxWithLocaleUS_evenOnGermanLocale() {
         Locale original = Locale.getDefault();
         try {
-            Locale.setDefault(Locale.GERMANY);
+                Locale.setDefault(Locale.GERMANY);
 
-            String body = "{\"data\":["
-                    + "{\"thumb_1024_url\":\"u1\"},{\"thumb_1024_url\":\"u2\"},"
-                    + "{\"thumb_1024_url\":\"u3\"},{\"thumb_1024_url\":\"u4\"},"
-                    + "{\"thumb_1024_url\":\"u5\"}"
-                    + "]}";
+        String body = "{\"data\":["
+                + "{\"thumb_1024_url\":\"u1\", \"sequence_id\":\"seq1\"},"
+                + "{\"thumb_1024_url\":\"u2\", \"sequence_id\":\"seq2\"},"
+                + "{\"thumb_1024_url\":\"u3\", \"sequence_id\":\"seq3\"},"
+                + "{\"thumb_1024_url\":\"u4\", \"sequence_id\":\"seq4\"},"
+                + "{\"thumb_1024_url\":\"u5\", \"sequence_id\":\"seq5\"},"
+                + "{\"thumb_1024_url\":\"u6\", \"sequence_id\":\"seq6\"},"
+                + "{\"thumb_1024_url\":\"u7\", \"sequence_id\":\"seq7\"},"
+                + "{\"thumb_1024_url\":\"u8\", \"sequence_id\":\"seq8\" }," 
+                + "{\"thumb_1024_url\":\"u9\", \"sequence_id\":\"seq9\"},"
+                + "{\"thumb_1024_url\":\"u10\", \"sequence_id\":\"seq10\"}"
+                + "]}";
             when(restTemplate.exchange(any(String.class), eq(HttpMethod.GET),
                     any(HttpEntity.class), eq(String.class)))
                     .thenReturn(new ResponseEntity<>(body, HttpStatus.OK));
