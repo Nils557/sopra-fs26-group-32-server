@@ -115,20 +115,18 @@ public class MapillaryService {
                     finalUrls.add(node.path("thumb_1024_url").asText());
                 }
                 if (finalUrls.size() == count) {
-                    break; // Success! We found 5 unique drives.
+                    break;
                 }
             }
 
+            // PASS 2: THE FALLBACK (The "Stride" Method)
             if (finalUrls.size() < count) {
-                log.warn("Only found {} unique sequences. Falling back to non-unique images to fill the round of {}.", finalUrls.size(), count);
-                
-                for (JsonNode node : nodeList) {
-                    String urlStr = node.path("thumb_1024_url").asText();
+                log.warn("Only found {} unique sequences. Spacing out images to force variety.", finalUrls.size());
+                int step = Math.max(1, nodeList.size() / count); 
+                for (int i = 0; i < nodeList.size() && finalUrls.size() < count; i += step) {
+                    String urlStr = nodeList.get(i).path("thumb_1024_url").asText();
                     if (!finalUrls.contains(urlStr)) {
                         finalUrls.add(urlStr);
-                    }
-                    if (finalUrls.size() == count) {
-                        break;
                     }
                 }
             }
@@ -142,6 +140,10 @@ public class MapillaryService {
             return finalUrls;
 
         } catch (Exception e) {
+            // If Pass 3 threw the exception, let it pass through directly!
+            if (e instanceof ResponseStatusException) {
+                throw (ResponseStatusException) e;
+            }
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Failed to fetch image sequence: " + e.getMessage());
         }
     }

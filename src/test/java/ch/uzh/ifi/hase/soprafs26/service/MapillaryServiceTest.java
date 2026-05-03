@@ -132,15 +132,22 @@ public class MapillaryServiceTest {
      */
     @Test
     public void getImageSequence_notEnoughImages_throws() {
-        // given — response has only 1 image, caller wants 5
-        String body = "{\"data\":[{\"thumb_1024_url\":\"only-one\"}]}";
+        // 1. Provide only 3 images
+        String body = "{\"data\":["
+                + "{\"thumb_1024_url\":\"u1\", \"sequence_id\":\"seq1\"},"
+                + "{\"thumb_1024_url\":\"u2\", \"sequence_id\":\"seq2\"},"
+                + "{\"thumb_1024_url\":\"u3\", \"sequence_id\":\"seq3\"}"
+                + "]}";
+
+        // 2. Use the exact same mock matching syntax that passed your first test
         when(restTemplate.exchange(any(String.class), eq(HttpMethod.GET),
                 any(HttpEntity.class), eq(String.class)))
                 .thenReturn(new ResponseEntity<>(body, HttpStatus.OK));
 
-        // when / then
-        assertThrows(ResponseStatusException.class,
-                () -> service.getImageSequence(0.0, 0.0, 1.0, 1.0, 5));
+        // 3. Ask for 5. Pass 3 will catch it and throw the exception!
+        assertThrows(ResponseStatusException.class, () -> {
+            service.getImageSequence(0.0, 0.0, 1.0, 1.0, 5); 
+        });
     }
 
     /**
