@@ -1,11 +1,16 @@
 package ch.uzh.ifi.hase.soprafs26.service;
 
+import java.util.List;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
+import ch.uzh.ifi.hase.soprafs26.entity.Answer;
+import ch.uzh.ifi.hase.soprafs26.entity.Lobby;
 import ch.uzh.ifi.hase.soprafs26.entity.Round;
+import ch.uzh.ifi.hase.soprafs26.entity.User;
 import ch.uzh.ifi.hase.soprafs26.repository.AnswerRepository;
 import ch.uzh.ifi.hase.soprafs26.repository.LobbyRepository;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.LocationResult;
@@ -104,5 +109,112 @@ public class ScoringServiceTest {
         assertTrue(score > 0, "Score should be greater than 0 for a close guess in a different country");
         assertTrue(score < 1000, "Score should be below the country threshold");
         assertEquals(733, score, "Score should match the proximity decay for the distance between Berlin and Zurich");
+    }
+
+    /**
+     * US10 #153 — getStandings aggregates each player's points across
+     * every round of the lobby and returns the leaderboard sorted
+     * descending by total score.
+     *
+     * Setup: lobby AB-1234 with three players (alice, bob, carol),
+     * each having answered three rounds. The Mockito stubs are wired
+     * so the per-round point totals come out to 300 / 200 / 150
+     * respectively. The assertions cover both contracts in one go:
+     *   - aggregation: each player's totalScore equals the SUM of their
+     *     pointsAwarded across all rounds in the lobby
+     *   - ordering: the resulting list is sorted descending by
+     *     totalScore (highest first)
+     *
+     * MANUAL SABOTAGE: In ScoringService.java line 77, reverse the
+     * comparator from
+     *     .sorted((a, b) -> Integer.compare(b.totalScore, a.totalScore))
+     * to
+     *     .sorted((a, b) -> Integer.compare(a.totalScore, b.totalScore))
+     * Carol (lowest score) will land at index 0 instead of alice
+     * (highest), and the assertion result.get(0).username == "alice"
+     * fails. This proves the test discriminates the sort direction
+     * specifically — not just "some ordering happened".
+     */
+    @Test
+    public void getStandings_multipleRoundsAndPlayers_returnsTotalsSortedDescending() {
+        // given — three players in lobby AB-1234
+        User alice = new User(); alice.setId(1L); alice.setUsername("alice");
+        User bob = new User(); bob.setId(2L); bob.setUsername("bob");
+        User carol = new User(); carol.setId(3L); carol.setUsername("carol");
+
+        Lobby lobby = new Lobby();
+        lobby.setLobbyCode("AB-1234");
+        lobby.getPlayers().add(alice);
+        lobby.getPlayers().add(bob);
+        lobby.getPlayers().add(carol);
+        when(lobbyRepository.findByLobbyCode("AB-1234")).thenReturn(lobby);
+
+        // alice answered 3 rounds totalling 300 (100 + 100 + 100)
+        Answer a1 = new Answer(); a1.setPointsAwarded(100);
+        Answer a2 = new Answer(); a2.setPointsAwarded(100);
+        Answer a3 = new Answer(); a3.setPointsAwarded(100);
+        when(answerRepository.findByPlayerIdAndRound_LobbyCode(1L, "AB-1234"))
+                .thenReturn(List.of(a1, a2, a3));
+
+        // bob answered 3 rounds totalling 200 (50 + 50 + 100)
+        Answer b1 = new Answer(); b1.setPointsAwarded(50);
+        Answer b2 = new Answer(); b2.setPointsAwarded(50);
+        Answer b3 = new Answer(); b3.setPointsAwarded(100);
+        when(answerRepository.findByPlayerIdAndRound_LobbyCode(2L, "AB-1234"))
+                .thenReturn(List.of(b1, b2, b3));
+
+        // carol answered 3 rounds totalling 150 (50 + 50 + 50)
+        Answer c1 = new Answer(); c1.setPointsAwarded(50);
+        Answer c2 = new Answer(); c2.setPointsAwarded(50);
+        Answer c3 = new Answer(); c3.setPointsAwarded(50);
+        when(answerRepository.findByPlayerIdAndRound_LobbyCode(3L, "AB-1234"))
+                .thenReturn(List.of(c1, c2, c3));
+
+        // when
+        List<ScoringService.PlayerStanding> result = scoringService.getStandings("AB-1234");
+
+        // then — every player appears exactly once, totals are summed correctly,
+        // and the list is sorted descending by totalScore
+        assertEquals(3, result.size(), "every player in the lobby must appear once");
+        assertEquals("alice", result.get(0).username);
+        assertEquals(300, result.get(0).totalScore);
+        assertEquals("bob", result.get(1).username);
+        assertEquals(200, result.get(1).totalScore);
+        assertEquals("carol", result.get(2).username);
+        assertEquals(150, result.get(2).totalScore);
+    }
+
+    /**
+     * US10 #153 — Defensive null guard: an unknown lobby code returns
+     * an empty list, not null and not an NPE.
+     *
+     * The frontend's leaderboard widget may call getStandings during
+     * lobby teardown (after the host left and the lobby record was
+     * deleted but before the WebSocket subscription closed). Returning
+     * an empty list keeps the UI stable instead of bubbling a 500 to
+     * the user.
+     *
+     * MANUAL SABOTAGE: In ScoringService.java line 69, invert the null
+     * guard from
+     *     if (lobby == null) return List.of();
+     * to
+     *     if (lobby != null) return List.of();
+     * With the inverted guard and a null lobby, execution falls
+     * through to lobby.getPlayers() and throws NullPointerException.
+     * The assertion result.isEmpty() is never reached — the test
+     * fails with NPE, proving the guard's presence is what the test
+     * actually verifies.
+     */
+    @Test
+    public void getStandings_unknownLobbyCode_returnsEmptyList() {
+        // given — repository finds no lobby for this code
+        when(lobbyRepository.findByLobbyCode("XX-0000")).thenReturn(null);
+
+        // when
+        List<ScoringService.PlayerStanding> result = scoringService.getStandings("XX-0000");
+
+        // then — empty list, no exception
+        assertTrue(result.isEmpty(),
+                "unknown lobby code must yield an empty leaderboard, not null or NPE");
     }
 }

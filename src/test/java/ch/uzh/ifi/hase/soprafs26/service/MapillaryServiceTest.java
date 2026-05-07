@@ -243,4 +243,78 @@ public class MapillaryServiceTest {
             Locale.setDefault(original);
         }
     }
+
+    /**
+     * US10 #187 — Unique-images guard via sequence_id.
+     *
+     * Background: in Mapillary, sequence_id identifies a continuous
+     * walk the capturer made through an area. Two images from the
+     * same sequence are usually a few meters apart and look almost
+     * identical to the player, so getImageSequence de-duplicates by
+     * sequence_id — at most one image per sequence in the returned
+     * list (PASS 1 in the production code).
+     *
+     * Setup: 10 images covering only 5 distinct sequence IDs (2 per
+     * sequence), request count = 5. Build a url-to-sequence lookup
+     * table so we can verify each returned URL maps to a different
+     * sequence. PASS 1 will land all five distinct sequences (the
+     * shuffle order doesn't matter — five distinct sequences exist
+     * and PASS 1 walks until count is hit), so PASS 2 / PASS 3 do
+     * not run.
+     *
+     * MANUAL SABOTAGE: In MapillaryService.java lines 113-117, drop
+     * the dedup check by changing
+     *     if (!seenSequences.contains(seqId)) {
+     *         seenSequences.add(seqId);
+     *         finalUrls.add(node.path("thumb_1024_url").asText());
+     *     }
+     * to (remove the if-guard, always add)
+     *     seenSequences.add(seqId);
+     *     finalUrls.add(node.path("thumb_1024_url").asText());
+     * → the returned 5 URLs may now all come from a single sequence
+     * (whichever order the shuffle produced). The assertion
+     *     distinctSequences == 5
+     * fails because the actual count is e.g. 1 or 2, depending on
+     * shuffle. This proves the test discriminates the dedup behavior
+     * specifically — without it, the existing
+     * getImageSequence_validBbox_returnsRequestedCount test would
+     * still pass (it only asserts size and URL membership).
+     */
+    @Test
+    public void getImageSequence_payloadWithDuplicateSequenceIds_returnsOneUrlPerSequence() {
+        // given — 10 images, 5 distinct sequences with 2 images each
+        String body = "{\"data\":["
+                + "{\"thumb_1024_url\":\"u1\", \"sequence_id\":\"S1\"},"
+                + "{\"thumb_1024_url\":\"u2\", \"sequence_id\":\"S1\"},"
+                + "{\"thumb_1024_url\":\"u3\", \"sequence_id\":\"S2\"},"
+                + "{\"thumb_1024_url\":\"u4\", \"sequence_id\":\"S2\"},"
+                + "{\"thumb_1024_url\":\"u5\", \"sequence_id\":\"S3\"},"
+                + "{\"thumb_1024_url\":\"u6\", \"sequence_id\":\"S3\"},"
+                + "{\"thumb_1024_url\":\"u7\", \"sequence_id\":\"S4\"},"
+                + "{\"thumb_1024_url\":\"u8\", \"sequence_id\":\"S4\"},"
+                + "{\"thumb_1024_url\":\"u9\", \"sequence_id\":\"S5\"},"
+                + "{\"thumb_1024_url\":\"u10\", \"sequence_id\":\"S5\"}"
+                + "]}";
+        when(restTemplate.exchange(any(String.class), eq(HttpMethod.GET),
+                any(HttpEntity.class), eq(String.class)))
+                .thenReturn(new ResponseEntity<>(body, HttpStatus.OK));
+
+        // url -> sequence_id lookup so we can verify post-hoc which
+        // sequence each returned URL came from
+        java.util.Map<String, String> urlToSequence = new java.util.HashMap<>();
+        urlToSequence.put("u1", "S1"); urlToSequence.put("u2", "S1");
+        urlToSequence.put("u3", "S2"); urlToSequence.put("u4", "S2");
+        urlToSequence.put("u5", "S3"); urlToSequence.put("u6", "S3");
+        urlToSequence.put("u7", "S4"); urlToSequence.put("u8", "S4");
+        urlToSequence.put("u9", "S5"); urlToSequence.put("u10", "S5");
+
+        // when
+        List<String> urls = service.getImageSequence(0.0, 0.0, 1.0, 1.0, 5);
+
+        // then — exactly 5 URLs, each from a distinct sequence
+        assertEquals(5, urls.size(), "must return exactly the requested count");
+        long distinctSequences = urls.stream().map(urlToSequence::get).distinct().count();
+        assertEquals(5L, distinctSequences,
+                "each returned URL must come from a different sequence_id; got: " + urls);
+    }
 }

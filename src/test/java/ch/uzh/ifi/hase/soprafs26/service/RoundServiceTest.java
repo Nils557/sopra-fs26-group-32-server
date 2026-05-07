@@ -6,7 +6,9 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -20,9 +22,11 @@ import org.mockito.ArgumentCaptor;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -35,6 +39,7 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.server.ResponseStatusException;
 
+import ch.uzh.ifi.hase.soprafs26.constant.LobbyStatus;
 import ch.uzh.ifi.hase.soprafs26.constant.ScoreResult;
 import ch.uzh.ifi.hase.soprafs26.entity.Answer;
 import ch.uzh.ifi.hase.soprafs26.entity.Lobby;
@@ -45,6 +50,7 @@ import ch.uzh.ifi.hase.soprafs26.repository.LobbyRepository;
 import ch.uzh.ifi.hase.soprafs26.repository.RoundRepository;
 import ch.uzh.ifi.hase.soprafs26.repository.UserRepository;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.LocationResult;
+import ch.uzh.ifi.hase.soprafs26.rest.dto.RoundSummaryGetDTO;
 
 
 /**
@@ -866,5 +872,355 @@ public class RoundServiceTest {
                 "scores broadcast payload should carry the standings list");
         assertEquals(ScoringService.PlayerStanding.class, broadcastedScores.get(0).getClass(),
                 "scores broadcast must carry PlayerStanding records");
+    }
+
+    // -------------------------------------------------------------------
+    // US10 — Round summary + transition (#152, #154 dedup, #155, #186)
+    // -------------------------------------------------------------------
+
+    /**
+     * US10 #152 — GET /lobbies/{code}/rounds/{roundId}/summary service logic.
+     *
+     * Builds the RoundSummaryGetDTO that drives the frontend's "round
+     * summary" overlay. The DTO must carry:
+     *   - the correct location of the round (city, country, lat, lng)
+     *   - the cumulative leaderboard, fetched from ScoringService.getStandings
+     *   - submittedPlayerIds — the list of player ids that actually
+     *     submitted an answer this round, so the frontend can render a
+     *     "didn't answer" badge for everyone else
+     *
+     * The controller-layer happy-path test lives in LobbyControllerTest;
+     * this service-level test covers the actual mapping logic that the
+     * controller test mocks away.
+     *
+     * MANUAL SABOTAGE: In RoundService.java line 511, swap the player-id
+     * extraction by changing
+     *     .map(answer -> answer.getPlayer().getId())
+     * to
+     *     .map(answer -> answer.getRound().getId())
+     * → submittedPlayerIds will be filled with the round id (10L) repeated
+     * once per Answer instead of the actual player ids. The assertion
+     *     result.getSubmittedPlayerIds() equals List.of(7L, 8L)
+     * fails because the actual list is [10L, 10L]. This proves the test
+     * pins the player-id source specifically — a plausible refactor that
+     * accidentally maps from the wrong field is caught.
+     */
+    @Test
+    public void getRoundSummary_validRound_populatesDTOFieldsAndSubmittedIds() {
+        // given — round 10 in lobby AB-1234 at Zurich, with 2 submitted answers
+        User host = new User(); host.setId(7L); host.setUsername("host");
+        User guest = new User(); guest.setId(8L); guest.setUsername("guest");
+
+        Round round = new Round();
+        round.setId(10L);
+        round.setLobbyCode("AB-1234");
+        round.setTargetCity("Zurich");
+        round.setTargetCountry("Switzerland");
+        round.setTargetLatitude(47.3769);
+        round.setTargetLongitude(8.5417);
+        when(roundRepository.findById(10L)).thenReturn(Optional.of(round));
+
+        Answer answerHost = new Answer(); answerHost.setPlayer(host);
+        Answer answerGuest = new Answer(); answerGuest.setPlayer(guest);
+        when(answerRepository.findByRoundId(10L)).thenReturn(List.of(answerHost, answerGuest));
+
+        ScoringService.PlayerStanding hostStanding =
+                new ScoringService.PlayerStanding(7L, "host", 2000);
+        ScoringService.PlayerStanding guestStanding =
+                new ScoringService.PlayerStanding(8L, "guest", 1500);
+        when(scoringService.getStandings("AB-1234"))
+                .thenReturn(List.of(hostStanding, guestStanding));
+
+        // when
+        RoundSummaryGetDTO result = roundService.getRoundSummary("AB-1234", 10L);
+
+        // then — DTO carries the round's correct location, the leaderboard,
+        // and the submitted-ids list extracted from the answers
+        assertNotNull(result);
+        assertEquals(10L, result.getRoundId());
+        assertEquals("Zurich", result.getCorrectCity());
+        assertEquals("Switzerland", result.getCorrectCountry());
+        assertEquals(47.3769, result.getCorrectLatitude());
+        assertEquals(8.5417, result.getCorrectLongitude());
+        assertEquals(List.of(7L, 8L), result.getSubmittedPlayerIds(),
+                "submittedPlayerIds must be each Answer's player id, in answer order");
+        assertEquals(2, result.getStandings().size(), "standings must come from ScoringService");
+        assertEquals("host", result.getStandings().get(0).username);
+        assertEquals(2000, result.getStandings().get(0).totalScore);
+    }
+
+    /**
+     * US10 #154 — De-dup guard: handleRoundEnd is a no-op when the round
+     * has already finished.
+     *
+     * The existing submitAnswer_lastPlayerAnswered_… test covers the
+     * "all players answered" branch end-to-end, including the
+     * /roundEnd broadcast. What it does NOT cover is the race-condition
+     * guard at line 447-449:
+     *     if (round.isFinished()) return;
+     * which prevents a double-broadcast when the timer-expiry path AND
+     * the last-answer path arrive at handleRoundEnd in the same
+     * millisecond. Without that guard, "ROUND_ENDED" goes out twice and
+     * the frontend either flickers the summary screen or applies
+     * conflicting state updates.
+     *
+     * Setup: invoke handleRoundEnd via reflection on a Round whose
+     * finished flag is already true. The method must short-circuit
+     * immediately, without touching the messaging template, the
+     * repositories, or the scoring service.
+     *
+     * MANUAL SABOTAGE: In RoundService.java lines 447-449, comment out
+     * the guard:
+     *     if (round.isFinished()) {
+     *         return;
+     *     }
+     * → handleRoundEnd will run its full body even on an already-finished
+     * round, the messagingTemplate.convertAndSend("/topic/game/AB-1234/roundEnd", ...)
+     * call fires, and the verify(..., never()) assertion fails. This
+     * proves the test pins the guard's existence specifically, and
+     * detects a regression that re-introduces the double-broadcast bug.
+     */
+    @Test
+    public void handleRoundEnd_alreadyFinishedRound_doesNotBroadcastRoundEnd() {
+        // given — a round that has ALREADY been marked finished
+        Round round = new Round();
+        round.setId(10L);
+        round.setLobbyCode("AB-1234");
+        round.setFinished(true);
+
+        // when — invoke the private handleRoundEnd via reflection
+        ReflectionTestUtils.invokeMethod(roundService, "handleRoundEnd", "AB-1234", round);
+
+        // then — no /roundEnd broadcast, no /summary broadcast, no save,
+        // no scoring lookup. The guard short-circuited before any work.
+        verify(messagingTemplate, never()).convertAndSend(
+                eq("/topic/game/AB-1234/roundEnd"), any(Object.class));
+        verify(messagingTemplate, never()).convertAndSend(
+                eq("/topic/lobby/AB-1234/summary"), any(Object.class));
+        verify(roundRepository, never()).save(any(Round.class));
+        verify(scoringService, never()).getStandings(any(String.class));
+    }
+
+    /**
+     * US10 #155 — Round transition (last round): when the just-ended
+     * round was the FINAL round, the deferred 10-second task must
+     * broadcast "GAME_END" on /topic/lobby/{code}/game-state and flip
+     * the lobby's status to FINISHED.
+     *
+     * Why this needs scheduler injection: the GAME_END broadcast is
+     * inside a scheduler.schedule(runnable, 10, TimeUnit.SECONDS) call.
+     * In production that runnable fires 10 seconds after the round ends
+     * (giving the frontend time to display the summary screen). To test
+     * it without sleeping, we replace the internal ScheduledExecutorService
+     * with a Mockito mock that runs any scheduled runnable IMMEDIATELY
+     * via doAnswer, so the deferred branch fires synchronously inside
+     * the test.
+     *
+     * Setup: lobby has totalRounds=1 and the just-ended round is round 1
+     * (currentRoundNumber == totalRounds), so the GAME_END branch is
+     * taken.
+     *
+     * MANUAL SABOTAGE: In RoundService.java line 475, change the branch
+     * comparison from
+     *     if (currentRoundNumber >= totalRounds)
+     * to
+     *     if (currentRoundNumber > totalRounds)
+     * → with currentRoundNumber == totalRounds == 1, the condition is
+     * now false. Execution falls into the else branch and broadcasts
+     * "NEXT_ROUND" instead. The verify on "GAME_END" fails, AND the
+     * verify(never()) on "NEXT_ROUND" fails too. This proves the test
+     * pins the >= boundary condition that distinguishes "the last round
+     * just ended" from "more rounds remain".
+     */
+    @Test
+    public void handleRoundEnd_lastRoundCompleted_broadcastsGameEndOnGameStateTopic() {
+        // given — a mock scheduler that runs scheduled runnables immediately
+        // (so the deferred 10-second task fires inside the test)
+        ScheduledExecutorService mockScheduler = mock(ScheduledExecutorService.class);
+        when(mockScheduler.schedule(any(Runnable.class), anyLong(), any(TimeUnit.class)))
+                .thenAnswer(inv -> {
+                    Runnable runnable = inv.getArgument(0);
+                    runnable.run();
+                    return mock(ScheduledFuture.class);
+                });
+        ReflectionTestUtils.setField(roundService, "scheduler", mockScheduler);
+
+        // single-round lobby — the GAME_END branch must fire because
+        // currentRoundNumber (1) >= totalRounds (1)
+        Lobby lobby = new Lobby();
+        lobby.setLobbyCode("AB-1234");
+        lobby.setTotalRounds(1);
+        when(lobbyRepository.findByLobbyCode("AB-1234")).thenReturn(lobby);
+
+        Round round = new Round();
+        round.setId(10L);
+        round.setLobbyCode("AB-1234");
+        when(roundRepository.findById(10L)).thenReturn(Optional.of(round));
+        when(roundRepository.findByLobbyCode("AB-1234")).thenReturn(List.of(round));
+        when(roundRepository.save(any(Round.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        // getRoundSummary stubs (called inside handleRoundEnd before the deferred task)
+        when(answerRepository.findByRoundId(10L)).thenReturn(List.of());
+        when(scoringService.getStandings("AB-1234")).thenReturn(List.of());
+
+        // when — invoke the private handleRoundEnd via reflection
+        ReflectionTestUtils.invokeMethod(roundService, "handleRoundEnd", "AB-1234", round);
+
+        // then — GAME_END broadcast fired on the game-state topic
+        verify(messagingTemplate).convertAndSend(
+                eq("/topic/lobby/AB-1234/game-state"),
+                eq((Object) "GAME_END"));
+        // and the lobby was persisted with FINISHED status
+        assertEquals(LobbyStatus.FINISHED, lobby.getStatus(),
+                "lobby status must be flipped to FINISHED on game end");
+        verify(lobbyRepository).save(lobby);
+        // and NEXT_ROUND was NOT broadcast — locks down the branch direction
+        verify(messagingTemplate, never()).convertAndSend(
+                eq("/topic/lobby/AB-1234/game-state"),
+                eq((Object) "NEXT_ROUND"));
+    }
+
+    /**
+     * US10 #155 — Round transition (more rounds remain): when there
+     * are still rounds left to play, the deferred 10s task must
+     * broadcast "NEXT_ROUND" on /topic/lobby/{code}/game-state and
+     * NOT flip the lobby status.
+     *
+     * Setup mirrors the GAME_END test but with totalRounds=3 so the
+     * else-branch is taken. Note: after the broadcast fires, the
+     * production code calls startRoundWithTimer(lobbyCode) recursively
+     * to bootstrap the next round. With our empty locationsDataset
+     * that call throws, but the broadcast already happened and the
+     * inner catch in handleRoundEnd swallows the exception — so the
+     * verify still holds. We are deliberately not exercising the
+     * recursive startRoundWithTimer here; that path is owned by the
+     * other RoundService tests.
+     *
+     * MANUAL SABOTAGE: In RoundService.java line 481, change the
+     * payload string from
+     *     "NEXT_ROUND"
+     * to anything else, e.g.
+     *     "CONTINUE"
+     * → Mockito's eq((Object) "NEXT_ROUND") matcher fails when the
+     * broadcast carries "CONTINUE", and the test fails. This proves
+     * the test pins the literal payload contract that the frontend
+     * subscribes to (a typo here would silently break the next-round
+     * navigation in production).
+     */
+    @Test
+    public void handleRoundEnd_moreRoundsRemain_broadcastsNextRoundOnGameStateTopic() {
+        // given — mock scheduler runs scheduled runnables immediately
+        ScheduledExecutorService mockScheduler = mock(ScheduledExecutorService.class);
+        when(mockScheduler.schedule(any(Runnable.class), anyLong(), any(TimeUnit.class)))
+                .thenAnswer(inv -> {
+                    Runnable runnable = inv.getArgument(0);
+                    runnable.run();
+                    return mock(ScheduledFuture.class);
+                });
+        ReflectionTestUtils.setField(roundService, "scheduler", mockScheduler);
+
+        // 3-round lobby on round 1 — NEXT_ROUND branch must fire
+        Lobby lobby = new Lobby();
+        lobby.setLobbyCode("AB-1234");
+        lobby.setTotalRounds(3);
+        when(lobbyRepository.findByLobbyCode("AB-1234")).thenReturn(lobby);
+
+        Round round = new Round();
+        round.setId(10L);
+        round.setLobbyCode("AB-1234");
+        when(roundRepository.findById(10L)).thenReturn(Optional.of(round));
+        when(roundRepository.findByLobbyCode("AB-1234")).thenReturn(List.of(round));
+        when(roundRepository.save(any(Round.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        when(answerRepository.findByRoundId(10L)).thenReturn(List.of());
+        when(scoringService.getStandings("AB-1234")).thenReturn(List.of());
+
+        // when — invoke the private handleRoundEnd via reflection
+        ReflectionTestUtils.invokeMethod(roundService, "handleRoundEnd", "AB-1234", round);
+
+        // then — NEXT_ROUND broadcast fired, GAME_END did NOT, lobby status NOT flipped
+        verify(messagingTemplate).convertAndSend(
+                eq("/topic/lobby/AB-1234/game-state"),
+                eq((Object) "NEXT_ROUND"));
+        verify(messagingTemplate, never()).convertAndSend(
+                eq("/topic/lobby/AB-1234/game-state"),
+                eq((Object) "GAME_END"));
+        verify(lobbyRepository, never()).save(any(Lobby.class));
+    }
+
+    /**
+     * US10 #186 — Mapillary preload runs asynchronously and stores
+     * the preloaded round into an in-memory cache (preloadedRounds)
+     * keyed by lobby code. The next createAndStartRound call then
+     * drains the cache instead of paying the Mapillary round-trip
+     * latency, making the inter-round transition feel instant on the
+     * frontend.
+     *
+     * Setup: replace the internal ScheduledExecutorService with a
+     * mock whose execute(Runnable) runs the runnable synchronously,
+     * so the preload task completes inside the test instead of on a
+     * background thread. seedDataset wires a single curated location
+     * and a stub for GeocodingService; we additionally stub Mapillary
+     * to return 5 URLs and Geocoding to return ("NYC","USA").
+     *
+     * Important contract verified: the preload must NOT call
+     * roundRepository.save — the round is buffered in memory and gets
+     * persisted only later, when createAndStartRound drains the
+     * cache.
+     *
+     * MANUAL SABOTAGE: In RoundService.java line 157, change the cache
+     * key from the parameter to a hard-coded wrong key:
+     *     preloadedRounds.put(lobbyCode, preloaded);
+     * to
+     *     preloadedRounds.put("WRONG-KEY", preloaded);
+     * → the entry exists in the map, but under "WRONG-KEY" instead of
+     * "AB-1234". The assertion preloadedRounds.containsKey("AB-1234")
+     * fails. This proves the test pins the cache-key flow specifically;
+     * a mistake that puts the round under the wrong key (and therefore
+     * never gets consumed by createAndStartRound) is detected.
+     */
+    @SuppressWarnings("unchecked")
+    @Test
+    public void preloadNextRoundAsync_validInput_storesRoundInPreloadCacheWithoutPersisting() {
+        // given — mock scheduler runs execute() synchronously
+        ScheduledExecutorService mockScheduler = mock(ScheduledExecutorService.class);
+        doAnswer(inv -> {
+            Runnable r = inv.getArgument(0);
+            r.run();
+            return null;
+        }).when(mockScheduler).execute(any(Runnable.class));
+        ReflectionTestUtils.setField(roundService, "scheduler", mockScheduler);
+
+        // seed dataset + Mapillary so the preload runnable finishes successfully
+        seedDataset(new RoundService.CuratedLocation(40.0, -74.0, "NYC"));
+        when(mapillaryService.getImageSequence(anyDouble(), anyDouble(), anyDouble(), anyDouble(), eq(5)))
+                .thenReturn(List.of("u1", "u2", "u3", "u4", "u5"));
+        when(geocodingService.resolveLocation(anyDouble(), anyDouble()))
+                .thenReturn(new LocationResult("NYC", "USA"));
+
+        // when
+        roundService.preloadNextRoundAsync("AB-1234");
+
+        // then — the runnable was actually submitted to the scheduler
+        // (proves the method is async, not just sync work in disguise)
+        verify(mockScheduler).execute(any(Runnable.class));
+
+        // and the cache contains a fully-populated Round under the lobby code
+        Map<String, Round> preloadedRounds = (Map<String, Round>) ReflectionTestUtils.getField(
+                roundService, "preloadedRounds");
+        assertNotNull(preloadedRounds, "preloadedRounds field must be reachable");
+        assertTrue(preloadedRounds.containsKey("AB-1234"),
+                "preload must store the round under the request lobby code");
+
+        Round cached = preloadedRounds.get("AB-1234");
+        assertEquals(40.0, cached.getTargetLatitude());
+        assertEquals(-74.0, cached.getTargetLongitude());
+        assertEquals("NYC", cached.getTargetCity());
+        assertEquals("USA", cached.getTargetCountry());
+        assertEquals(5, cached.getImageSequence().size());
+
+        // and the round was NOT persisted — that happens later, when
+        // createAndStartRound drains the cache
+        verify(roundRepository, never()).save(any(Round.class));
     }
 }
