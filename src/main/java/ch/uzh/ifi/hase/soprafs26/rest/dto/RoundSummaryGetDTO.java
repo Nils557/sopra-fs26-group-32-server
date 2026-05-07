@@ -10,6 +10,7 @@ public class RoundSummaryGetDTO {
     private String correctCountry;
     private Double correctLatitude;
     private Double correctLongitude;
+    private List<Long> submittedPlayerIds;
     
     private List<PlayerStanding> standings;
 
@@ -30,4 +31,7 @@ public class RoundSummaryGetDTO {
 
     public List<PlayerStanding> getStandings() { return standings; }
     public void setStandings(List<PlayerStanding> standings) { this.standings = standings; }
+
+    public List<Long> getSubmittedPlayerIds() {return submittedPlayerIds;}
+    public void setSubmittedPlayerIds(List<Long> submittedPlayerIds) {this.submittedPlayerIds = submittedPlayerIds;}
 }

@@ -507,7 +507,22 @@ public class RoundService {
         if (!round.getLobbyCode().equals(lobbyCode)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Round does not belong to this lobby");
         }
+
+        // -----------------------------------------------------------------
+        // TASK #199: Fetch answers and extract player IDs for the frontend
+        // -----------------------------------------------------------------
+        List<Answer> answers = answerRepository.findByRoundId(roundId);
+        
+        List<Long> submittedIds = answers.stream()
+            .map(answer -> answer.getPlayer().getId())
+            .collect(Collectors.toList());
+            
+        // Set the transient field so DTOMapper can automatically pick it up
+        round.setSubmittedPlayerIds(submittedIds);
+        // -----------------------------------------------------------------
+
         List<ScoringService.PlayerStanding> standings = scoringService.getStandings(lobbyCode);
+        
         return DTOMapper.INSTANCE.convertToRoundSummaryGetDTO(round, standings);
     }
 }
