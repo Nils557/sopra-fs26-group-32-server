@@ -1,6 +1,9 @@
 package ch.uzh.ifi.hase.soprafs26.websocket;
 
 import ch.uzh.ifi.hase.soprafs26.service.WebSocketSessionService;
+import ch.uzh.ifi.hase.soprafs26.service.LobbyService;
+import ch.uzh.ifi.hase.soprafs26.service.RoundService;
+import ch.uzh.ifi.hase.soprafs26.repository.RoundRepository;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -8,6 +11,11 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.MockitoAnnotations;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.simp.stomp.StompCommand;
+import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
+import org.springframework.messaging.support.MessageBuilder;
+import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 
 /**
@@ -27,8 +35,13 @@ import org.springframework.web.socket.messaging.SessionDisconnectEvent;
  */
 public class WebSocketEventListenerTest {
 
-    @Mock
-    private WebSocketSessionService sessionService;
+    @Mock private WebSocketSessionService sessionService;
+
+    @Mock private LobbyService lobbyService;
+
+    @Mock private RoundService roundService;
+
+    @Mock private RoundRepository roundRepository;
 
     @InjectMocks
     private WebSocketEventListener listener;
@@ -54,16 +67,28 @@ public class WebSocketEventListenerTest {
      */
     @Test
     public void handleWebSocketDisconnectListener_removesSessionFromSessionService() {
-        // given — a disconnect event carrying a known session id
-        SessionDisconnectEvent event = Mockito.mock(SessionDisconnectEvent.class);
-        Mockito.when(event.getSessionId()).thenReturn("session-42");
+        // 1. Create Stomp headers containing the target session ID
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.DISCONNECT);
+        accessor.setSessionId("session-42");
 
-        // when — Spring would call this via @EventListener; we invoke it directly
+        // 2. Wrap the headers in a standard Spring Message
+        Message<byte[]> message = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
+
+        // 3. Create the event using that message
+        SessionDisconnectEvent event = new SessionDisconnectEvent(this, message, "session-42", CloseStatus.NORMAL);
+
+        // 4. Stub the session service so it passes the 'if (userId != null)' check
+        Mockito.when(sessionService.getUserId("session-42")).thenReturn(1L);
+        Mockito.when(sessionService.getLobbyCodeBySession("session-42")).thenReturn("AB-1234");
+        
+        // Stub the repository to return null just to prevent null pointers
+        Mockito.when(roundRepository.findTopByLobbyCodeOrderByIdDesc("AB-1234")).thenReturn(null);
+
+        // 5. Act
         listener.handleWebSocketDisconnectListener(event);
 
-        // then — the session service had remove invoked with the exact session id
+        // 6. Assert that the cleanup logic ran properly
         Mockito.verify(sessionService).remove("session-42");
-        // and nothing else (no lobby, no broadcast — that's by design)
-        Mockito.verifyNoMoreInteractions(sessionService);
+        Mockito.verify(lobbyService).handleDisconnect("AB-1234", 1L);
     }
 }

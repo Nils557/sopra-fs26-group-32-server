@@ -9,4 +9,5 @@ import java.util.List;
 @Repository("roundRepository")
 public interface RoundRepository extends JpaRepository<Round, Long> {
     List<Round> findByLobbyCode(String lobbyCode);
+    Round findTopByLobbyCodeOrderByIdDesc(String lobbyCode);
 }

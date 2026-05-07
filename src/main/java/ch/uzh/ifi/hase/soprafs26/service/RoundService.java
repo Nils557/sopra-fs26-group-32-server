@@ -433,17 +433,11 @@ public class RoundService {
         // ==========================================
         // 4. GAME STATE MANAGEMENT
         // ==========================================
-        // Early round end if all players have answered (#111)
-        int totalPlayers = lobby.getPlayers().size(); // Reusing the 'lobby' from line 15!
-        int answeredPlayers = roundAnswers.size();    
-    
-        if (answeredPlayers >= totalPlayers) {
-            log.info("All players answered. Early round end for lobby: {}", lobbyCode);
-            handleRoundEnd(lobbyCode, round);
-        }
+        checkAndHandleEarlyRoundEnd(lobbyCode, round);
 
         return answer;
     }
+
 
     /**
      * Centralized logic to handle the end of a round, whether by timer or all players answering.
@@ -524,5 +518,18 @@ public class RoundService {
         List<ScoringService.PlayerStanding> standings = scoringService.getStandings(lobbyCode);
         
         return DTOMapper.INSTANCE.convertToRoundSummaryGetDTO(round, standings);
+    }
+
+    public void checkAndHandleEarlyRoundEnd(String lobbyCode, Round currentRound) {
+        Lobby lobby = lobbyRepository.findByLobbyCode(lobbyCode);
+        if (lobby == null || currentRound == null) return;
+
+        int totalPlayers = lobby.getPlayers().size(); // Now updated if someone left
+        int answeredPlayers = answerRepository.findByRoundId(currentRound.getId()).size();
+
+        if (totalPlayers > 0 && answeredPlayers >= totalPlayers) {
+            log.info("All active players answered (or remaining players after a disconnect). Ending round early for lobby: {}", lobbyCode);
+            handleRoundEnd(lobbyCode, currentRound);
+        }
     }
 }
