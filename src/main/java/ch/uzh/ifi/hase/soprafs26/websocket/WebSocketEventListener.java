@@ -42,7 +42,7 @@ public class WebSocketEventListener {
         String sessionId = headerAccessor.getSessionId();
 
         // 3. Call the methods on your properly injected instance
-        Long userId = webSocketSessionService.getUserId(sessionId); // Ensure this matches your actual method name (maybe getUserIdBySession?)
+        Long userId = webSocketSessionService.getUserId(sessionId);
         String lobbyCode = webSocketSessionService.getLobbyCodeBySession(sessionId);
 
         if (userId != null && lobbyCode != null) {
@@ -60,7 +60,7 @@ public class WebSocketEventListener {
             }
 
             // Cleanup the session tracker
-            webSocketSessionService.remove(sessionId); // Ensure this matches your actual method name (maybe removeSession?)
+            webSocketSessionService.remove(sessionId); 
         }
     }
 }
