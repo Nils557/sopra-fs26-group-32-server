@@ -1223,4 +1223,127 @@ public class RoundServiceTest {
         // createAndStartRound drains the cache
         verify(roundRepository, never()).save(any(Round.class));
     }
+
+    // -------------------------------------------------------------------
+    // US11 — Submission visibility (#199 edge case + #200 double-submit)
+    // -------------------------------------------------------------------
+
+    /**
+     * US11 #199 — Empty submitter list: when no answers exist for the
+     * round (e.g. the round just started and the summary is computed
+     * before any pin lands, or a player refreshes their browser in
+     * the first second), the DTO's submittedPlayerIds must be a
+     * non-null EMPTY list — not null and not a synthetic placeholder.
+     *
+     * Complements the US10 happy-path test
+     * getRoundSummary_validRound_populatesDTOFieldsAndSubmittedIds
+     * which verifies the populated case [7L, 8L]. Together they prove
+     * the field reflects whatever Answer set actually exists in the
+     * database — including the empty case the frontend hits on
+     * refresh.
+     *
+     * MANUAL SABOTAGE: In RoundService.java lines 510-512, replace
+     * the stream-collect block
+     *     List<Long> submittedIds = answers.stream()
+     *         .map(answer -> answer.getPlayer().getId())
+     *         .collect(Collectors.toList());
+     * with a hard-coded non-empty list
+     *     List<Long> submittedIds = List.of(0L);
+     * The empty-case assertion result.getSubmittedPlayerIds().isEmpty()
+     * fails because the actual list now contains a stale 0L. This
+     * proves the test pins the dynamic-from-answers contract — a
+     * hard-coded list that happens to make some other test pass would
+     * not satisfy this one.
+     */
+    @Test
+    public void getRoundSummary_noAnswersYet_returnsEmptySubmittedPlayerIds() {
+        // given — round 10 in lobby AB-1234, but NO answers submitted yet
+        Round round = new Round();
+        round.setId(10L);
+        round.setLobbyCode("AB-1234");
+        round.setTargetCity("Zurich");
+        round.setTargetCountry("Switzerland");
+        round.setTargetLatitude(47.3769);
+        round.setTargetLongitude(8.5417);
+        when(roundRepository.findById(10L)).thenReturn(Optional.of(round));
+
+        // empty answer list — the case we're proving works
+        when(answerRepository.findByRoundId(10L)).thenReturn(List.of());
+        when(scoringService.getStandings("AB-1234")).thenReturn(List.of());
+
+        // when
+        RoundSummaryGetDTO result = roundService.getRoundSummary("AB-1234", 10L);
+
+        // then — submittedPlayerIds is non-null AND empty
+        assertNotNull(result.getSubmittedPlayerIds(),
+                "submittedPlayerIds must never be null, even when no answers exist");
+        assertTrue(result.getSubmittedPlayerIds().isEmpty(),
+                "submittedPlayerIds must be empty when no Answer rows exist for the round");
+    }
+
+    /**
+     * US11 #200 — Double-submit protection.
+     *
+     * When a player attempts to submit a pin twice for the same round
+     * (browser double-click, network retry, malicious replay, etc.),
+     * the second submission must be rejected with HTTP 409 CONFLICT
+     * and no second Answer row may be persisted. Without this guard a
+     * player could stack multiple scores in a single round.
+     *
+     * The guard sits BEFORE the persistence step. Its detection
+     * mechanism is
+     *     answerRepository.existsByRoundIdAndPlayerId(roundId, playerId)
+     * The repository-level integration test
+     * (AnswerRepositoryIntegrationTest#existsByRoundIdAndPlayerId_*)
+     * already proves the query itself returns true/false correctly;
+     * THIS test proves the service layer actually USES that query and
+     * rejects the request when it returns true.
+     *
+     * MANUAL SABOTAGE A (remove the guard): In RoundService.java
+     * lines 399-401, comment out the entire
+     *     if (answerRepository.existsByRoundIdAndPlayerId(roundId, playerId)) {
+     *         throw new ResponseStatusException(HttpStatus.CONFLICT, ...);
+     *     }
+     * block. The test's assertThrows fails because submitAnswer
+     * silently falls through to persistence even on a duplicate.
+     *
+     * MANUAL SABOTAGE B (wrong status code): In RoundService.java
+     * line 400, change HttpStatus.CONFLICT to HttpStatus.OK (or any
+     * non-409). The status assertion 409 == ex.getStatusCode().value()
+     * fails — proves the test pins the specific 409 contract that the
+     * frontend's error handler dispatches on.
+     */
+    @Test
+    public void submitAnswer_playerAlreadySubmitted_throws409Conflict() {
+        // given — lobby + round set up normally, BUT this player already
+        // has an Answer row for this round (existsBy guard returns true)
+        User host = new User(); host.setId(1L); host.setUsername("host");
+        User guest = new User(); guest.setId(2L); guest.setUsername("guest");
+
+        Lobby lobby = new Lobby();
+        lobby.setLobbyCode("AB-1234");
+        lobby.setTotalRounds(3);
+        lobby.getPlayers().add(host);
+        lobby.getPlayers().add(guest);
+        when(lobbyRepository.findByLobbyCode("AB-1234")).thenReturn(lobby);
+
+        Round round = new Round();
+        round.setId(10L);
+        round.setLobbyCode("AB-1234");
+        when(roundRepository.findById(10L)).thenReturn(Optional.of(round));
+        when(userRepository.findById(2L)).thenReturn(Optional.of(guest));
+
+        // the existsBy guard returns true — meaning a previous Answer row exists
+        when(answerRepository.existsByRoundIdAndPlayerId(10L, 2L)).thenReturn(true);
+
+        // when / then — submitAnswer must reject with 409 CONFLICT
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> roundService.submitAnswer("AB-1234", 10L, 2L, 47.3769, 8.5417));
+        assertEquals(409, ex.getStatusCode().value(),
+                "duplicate submission must return HTTP 409 CONFLICT");
+
+        // and CRUCIALLY no Answer row was persisted — proves the guard
+        // short-circuited BEFORE the save step
+        verify(answerRepository, never()).save(any(Answer.class));
+    }
 }
