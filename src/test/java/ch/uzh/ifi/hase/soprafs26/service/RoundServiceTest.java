@@ -95,6 +95,9 @@ public class RoundServiceTest {
     @Mock
     private GeocodingService geocodingService; 
 
+    @Mock
+    private GameEventService gameEventService;
+
     @InjectMocks
     private RoundService roundService;
 
@@ -855,15 +858,13 @@ public class RoundServiceTest {
         roundService.submitAnswer("AB-1234", 10L, 2L, 0.0, 0.0);
 
         // then — broadcast went to /scores with the standings list
-        @SuppressWarnings({"unchecked", "rawtypes"})
-        ArgumentCaptor<List> captor = ArgumentCaptor.forClass(List.class);
-        verify(messagingTemplate).convertAndSend(
-                eq("/topic/lobby/AB-1234/scores"),
-                (Object) captor.capture());
-        List<?> payload = captor.getValue();
-        assertEquals(1, payload.size(),
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<ScoringService.PlayerStanding>> captor = ArgumentCaptor.forClass(List.class);
+        verify(gameEventService).broadcastScores(eq("AB-1234"), captor.capture());
+        List<ScoringService.PlayerStanding> broadcastedScores = captor.getValue();
+        assertEquals(1, broadcastedScores.size(),
                 "scores broadcast payload should carry the standings list");
-        assertEquals(ScoringService.PlayerStanding.class, payload.get(0).getClass(),
+        assertEquals(ScoringService.PlayerStanding.class, broadcastedScores.get(0).getClass(),
                 "scores broadcast must carry PlayerStanding records");
     }
 }

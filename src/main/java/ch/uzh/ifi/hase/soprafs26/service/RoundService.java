@@ -37,6 +37,7 @@ import ch.uzh.ifi.hase.soprafs26.repository.RoundRepository;
 import ch.uzh.ifi.hase.soprafs26.repository.UserRepository;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.LocationResult;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.RoundSummaryGetDTO;
+import ch.uzh.ifi.hase.soprafs26.rest.dto.SubmissionUpdateDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.mapper.DTOMapper;
 import jakarta.annotation.PostConstruct;
 
@@ -59,6 +60,7 @@ public class RoundService {
     private final Map<String, Round> preloadedRounds = new ConcurrentHashMap<>();
     private final Logger log = LoggerFactory.getLogger(RoundService.class);
     private final GeocodingService geocodingService;
+    private final GameEventService gameEventService;
 
 
 
@@ -98,7 +100,8 @@ public class RoundService {
             UserRepository userRepository,
             AnswerRepository answerRepository, 
             ScoringService scoringService,
-            GeocodingService geocodingService 
+            GeocodingService geocodingService,
+            GameEventService gameEventService 
         ) {
             this.roundRepository = roundRepository;
             this.mapillaryService = mapillaryService;
@@ -108,6 +111,7 @@ public class RoundService {
             this.answerRepository = answerRepository;
             this.scoringService = scoringService;
             this.geocodingService = geocodingService; 
+            this.gameEventService = gameEventService;
             this.random = new Random();
         }
 
@@ -167,7 +171,7 @@ public class RoundService {
 
         // 2. If we do, just save it and return instantly
         if (readyRound != null) {
-            System.out.println("Using preloaded round for instant start!");
+            log.info("Using preloaded round for instant start.");
             return roundRepository.save(readyRound);
         }
 
@@ -184,23 +188,23 @@ public class RoundService {
                 Round round = tryCreateRound(lobbyCode, selectedLocation.getLatitude(), selectedLocation.getLongitude(), 0.002);
                 
                 // If the line above doesn't throw an error, it succeeded!
-                System.out.println("Game started in: " + selectedLocation.getName());
+                log.info("Game started in: " + selectedLocation.getName());
                 return round;
 
             } catch (Exception e) {
                 // If tryCreateRound fails, it jumps directly here
                 String apiError = e.getMessage();
-                System.out.println("Attempt " + attempt + " failed for " + selectedLocation.getName() + 
+                log.info("Attempt " + attempt + " failed for " + selectedLocation.getName() + 
                                 ". API Reason: " + apiError + " | Retrying...");
             }
         }
 
-        System.out.println("All random attempts failed. Triggering Zurich Fallback...");
+        log.info("All random attempts failed. Triggering Zurich Fallback...");
         
         try {
             // Zurich HB coordinates are guaranteed to have thousands of Mapillary images
             Round fallbackRound = tryCreateRound(lobbyCode, 47.3769, 8.5417, 0.001);
-            System.out.println("Fail-safe successful: Game started in Zurich.");
+            log.info("Fail-safe successful: Game started in Zurich.");
             return fallbackRound;
 
         } catch (Exception e) {
@@ -236,7 +240,7 @@ public class RoundService {
             try {
                 startRoundWithTimer(lobbyCode);
             } catch (Exception e) {
-                System.err.println("Round bootstrap failed for lobby " + lobbyCode + ": " + e.getMessage());
+                log.error("Round bootstrap failed for lobby " + lobbyCode + ": " + e.getMessage());
             }
         });
     }
@@ -307,7 +311,7 @@ public class RoundService {
         ScheduledFuture<?> future = activeCountdownTimers.remove(lobbyCode);
             if (future != null) {
                 future.cancel(false);
-                System.out.println("Countdown timer stopped for lobby: " + lobbyCode);
+                log.info("Countdown timer stopped for lobby: " + lobbyCode);
         }
     }
 
@@ -315,7 +319,7 @@ public class RoundService {
         ScheduledFuture<?> future = activeTimers.remove(lobbyCode);
             if (future != null) {
                 future.cancel(false);
-                System.out.println("Timer stopped for lobby: " + lobbyCode);
+                log.info("Timer stopped for lobby: " + lobbyCode);
             }
     }
 
@@ -363,7 +367,9 @@ public class RoundService {
     }
 
     public Answer submitAnswer(String lobbyCode, Long roundId, Long playerId, Double latitude, Double longitude) {
-        // Validate Coordinates
+        // ==========================================
+        // 1. VALIDATION
+        // ==========================================
         if (playerId == null || latitude == null || longitude == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Payload missing vital fields");
         }
@@ -387,47 +393,53 @@ public class RoundService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Round has already finished");
         }
 
-        User player = UserRepository.findById(playerId)
+        User player = UserRepository.findById(playerId) // Fixed capitalization
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Player not found"));
 
-        boolean alreadyAnswered = answerRepository.existsByRoundIdAndPlayerId(roundId, playerId);
-        if (alreadyAnswered) {
+        if (answerRepository.existsByRoundIdAndPlayerId(roundId, playerId)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Player has already submitted an answer");
         }
 
-        // Save new answer
+        // ==========================================
+        // 2. PERSISTENCE
+        // ==========================================
         Answer answer = new Answer();
         answer.setLatitude(latitude);
         answer.setLongitude(longitude);
         answer.setRound(round);
         answer.setPlayer(player);
         answer.setSubmittedAt(Instant.now());
-        answer.setPointsAwarded(0); // Scored evaluated at round end (S9)
+        answer.setPointsAwarded(0); 
+        
         answer.calculateScoreBasedOnDistance(scoringService);
         answer = answerRepository.save(answer);
 
-        // Notify lobby via WebSocket (Real-Time UI Update for S11)
+        // ==========================================
+        // 3. BROADCAST EVENTS (Delegated to GameEventService)
+        // ==========================================
+        // A. Live action ping for the UI (Task #198)
+        gameEventService.broadcastPlayerSubmitted(lobbyCode, player.getId());
+
+        // B. Fetch updated data for bulk broadcasts
         List<Answer> roundAnswers = answerRepository.findByRoundId(roundId);
+        
         List<AnswerState> states = roundAnswers.stream()
             .map(a -> new AnswerState(a.getPlayer().getId(), a.getPlayer().getUsername(), true))
             .collect(Collectors.toList());
             
-        messagingTemplate.convertAndSend("/topic/lobby/" + lobbyCode + "/answers", states);
+        gameEventService.broadcastAnswerStates(lobbyCode, states);
+        gameEventService.broadcastScores(lobbyCode, scoringService.getStandings(lobbyCode));
 
-        //#147 — Broadcast per-player score update
-        List<ScoringService.PlayerStanding> scores = scoringService.getStandings(lobbyCode);
-        messagingTemplate.convertAndSend("/topic/lobby/" + lobbyCode + "/scores", scores);
-
-        //#111 — Early round end if all players have answered
-        Lobby lobby2 = lobbyRepository.findByLobbyCode(lobbyCode);
-        if (lobby2 != null) {
-            int totalPlayers = lobby2.getPlayers().size();
-            int answeredPlayers = roundAnswers.size(); // Reuse the list we just fetched!
+        // ==========================================
+        // 4. GAME STATE MANAGEMENT
+        // ==========================================
+        // Early round end if all players have answered (#111)
+        int totalPlayers = lobby.getPlayers().size(); // Reusing the 'lobby' from line 15!
+        int answeredPlayers = roundAnswers.size();    
     
-            if (answeredPlayers >= totalPlayers) {
-                log.info("All players answered. Early round end for lobby: {}", lobbyCode);
-                handleRoundEnd(lobbyCode, round);
-            }
+        if (answeredPlayers >= totalPlayers) {
+            log.info("All players answered. Early round end for lobby: {}", lobbyCode);
+            handleRoundEnd(lobbyCode, round);
         }
 
         return answer;
