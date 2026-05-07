@@ -201,4 +201,25 @@ public class LobbyService {
         log.debug("Game started in lobby: {}", lobbyCode);
         return lobby;
     }
+
+    @Transactional
+    public void handleDisconnect(String lobbyCode, Long userId) {
+        Lobby lobby = lobbyRepository.findByLobbyCode(lobbyCode);
+        if (lobby == null) return; // Fail silently, the lobby might already be deleted
+
+        // We don't care if the game is INGAME or WAITING, if they disconnect, remove them!
+        boolean isPlayerInLobby = lobby.getPlayers().stream().anyMatch(p -> p.getId().equals(userId));
+        
+        if (isPlayerInLobby) {
+            removePlayer(lobby, userId); // Use your existing helper method!
+            lobbyRepository.save(lobby);
+            lobbyRepository.flush();
+        }
+    }
+
+    public String getLobbyCodeByUserId(Long userId) {
+        return lobbyRepository.findByPlayers_Id(userId)
+                .map(Lobby::getLobbyCode)
+                .orElse(null);
+    }
 }

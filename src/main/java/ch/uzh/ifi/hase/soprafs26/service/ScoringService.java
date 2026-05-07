@@ -44,8 +44,7 @@ public class ScoringService {
 
         // 2. COUNTRY MATCH: Partial Points (1000 - 1999 range)
         if (guessLocation.getCountry().equalsIgnoreCase(round.getTargetCountry())) {
-            int countryScore = (int) Math.max(COUNTRY_PENALTY_THRESHOLD, (MAX_POINTS - 1) - (distance * 0.5));
-            return countryScore;
+            return (int) Math.max(COUNTRY_PENALTY_THRESHOLD, (MAX_POINTS - 1) - (distance * 0.5));
         }
 
         // 3. INCORRECT COUNTRY: Proximity decay (0 - 999 range)
