@@ -68,6 +68,9 @@ public class LobbyControllerTest {
     @MockitoBean
     private RoundService roundService;
 
+    @MockitoBean
+    private ScoringService scoringService;
+
     /**
      * US2 #62 — POST /lobbies endpoint for lobby creation.
      *

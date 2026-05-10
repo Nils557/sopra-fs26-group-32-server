@@ -26,16 +26,19 @@ import ch.uzh.ifi.hase.soprafs26.rest.dto.UserGetDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.mapper.DTOMapper;
 import ch.uzh.ifi.hase.soprafs26.service.LobbyService;
 import ch.uzh.ifi.hase.soprafs26.service.RoundService;
+import ch.uzh.ifi.hase.soprafs26.service.ScoringService;
 
 @RestController
 public class LobbyController {
 
     private final LobbyService lobbyService;
     private final RoundService roundService;
+    private final ScoringService scoringService;
 
-    LobbyController(LobbyService lobbyService, RoundService roundService) {
+    LobbyController(LobbyService lobbyService, RoundService roundService, ScoringService scoringService) {
         this.lobbyService = lobbyService;
         this.roundService = roundService;
+        this.scoringService = scoringService;
     }
 
     @PostMapping("/lobbies")
@@ -95,5 +98,12 @@ public class LobbyController {
     @ResponseBody
     public RoundSummaryGetDTO getRoundSummary(@PathVariable String code, @PathVariable Long roundId) {
         return roundService.getRoundSummary(code, roundId);
+    }
+
+    @GetMapping("/lobbies/{code}/results")
+    @ResponseStatus(HttpStatus.OK)
+    @ResponseBody
+    public List<ScoringService.FinalStanding> getFinalResults(@PathVariable String code) {
+        return scoringService.getFinalStandings(code);
     }
 }
