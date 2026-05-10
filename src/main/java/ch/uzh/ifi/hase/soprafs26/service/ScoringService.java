@@ -88,4 +88,27 @@ public class ScoringService {
             this.totalScore = totalScore;
         }
     }
+
+    public static class FinalStanding {
+        public final int rank;
+        public final Long playerId;
+        public final String username;
+        public final int totalScore;
+
+        public FinalStanding(int rank, Long playerId, String username, int totalScore) {
+            this.rank = rank;
+            this.playerId = playerId;
+            this.username = username;
+            this.totalScore = totalScore;
+        }
+    }
+
+    public List<FinalStanding> getFinalStandings(String lobbyCode) {
+        List<PlayerStanding> standings = getStandings(lobbyCode);
+        int[] rank = {1};
+        return standings.stream()
+            .map(s -> new FinalStanding(rank[0]++, s.playerId, s.username, s.totalScore))
+            .collect(Collectors.toList());
+    }
 }
+
