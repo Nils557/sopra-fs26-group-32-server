@@ -1,7 +1,9 @@
 package ch.uzh.ifi.hase.soprafs26.entity;
 
 import java.io.Serializable;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.List;
 
 import ch.uzh.ifi.hase.soprafs26.constant.LobbyStatus;
 import jakarta.persistence.Column;
@@ -12,8 +14,8 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
 import jakarta.persistence.OneToMany;
+import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
-import java.util.List;
 
 @Entity
 @Table(name = "LOBBY")
@@ -42,6 +44,13 @@ public class Lobby implements Serializable {
     @OneToMany(fetch = FetchType.LAZY)
     private List<User> players = new ArrayList<>();
 
+    private Instant createdAt;
+
+    @PrePersist
+    protected void onCreate() {
+        this.createdAt = Instant.now();
+    }
+
     // Getters and Setters ONLY
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -63,4 +72,7 @@ public class Lobby implements Serializable {
 
     public List<User> getPlayers() {return players;}
     public void setPlayers(List<User> players) {this.players = players;}
+
+    public Instant getCreatedAt() {return createdAt;}
+    public void setCreatedAt(Instant createdAt) {this.createdAt = createdAt;}
 }
