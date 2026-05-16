@@ -3,8 +3,11 @@ package ch.uzh.ifi.hase.soprafs26.entity;
 import java.io.Serializable;
 import java.time.Instant;
 
+import ch.uzh.ifi.hase.soprafs26.constant.UserStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
@@ -35,6 +38,10 @@ public class User implements Serializable {
 
 	private Instant createdAt;
 
+	@Column(nullable = false)
+	@Enumerated(EnumType.STRING)
+	private UserStatus status = UserStatus.ONLINE; 
+
 
 	public Long getId() {
 		return id;
@@ -63,5 +70,13 @@ public class User implements Serializable {
 	@PrePersist
 	protected void onCreate() {
 		this.createdAt = Instant.now();
+	}
+
+	public UserStatus getStatus() {
+		return status;
+	}
+
+	public void setStatus(UserStatus status) {
+		this.status = status;
 	}
 }

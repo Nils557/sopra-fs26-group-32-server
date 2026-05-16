@@ -11,7 +11,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.EnumType;
+
 import ch.uzh.ifi.hase.soprafs26.constant.LobbyStatus;
+import ch.uzh.ifi.hase.soprafs26.constant.UserStatus;
 import ch.uzh.ifi.hase.soprafs26.entity.Lobby;
 import ch.uzh.ifi.hase.soprafs26.entity.User;
 import ch.uzh.ifi.hase.soprafs26.repository.LobbyRepository;
@@ -134,6 +138,14 @@ public class LobbyService {
             // Remove any Round rows tied to this lobby before the lobby is deleted —
             // Round.lobbyCode has no FK, so Hibernate won't cascade them on its own.
             roundService.cleanupLobby(lobbyCode);
+
+            // FIX: GHOST LOBBY DETACHMENT
+            // Clean up the status of all players before the lobby is destroyed
+            // so they don't get stuck in a "WAITING" or "IN_GAME" state.
+            for (User player : lobby.getPlayers()) {
+                player.setStatus(UserStatus.ONLINE); 
+                userRepository.save(player);
+            }    
             // Explicitly clear the join-table rows first so no lobby_players.players_id
             // references survive to block the subsequent User delete on Postgres.
             lobby.getPlayers().clear();

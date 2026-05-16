@@ -1,6 +1,7 @@
 package ch.uzh.ifi.hase.soprafs26.rest.dto;
 
 import java.time.Instant;
+
 import ch.uzh.ifi.hase.soprafs26.constant.ScoreResult;
 
 public class AnswerGetDTO {
