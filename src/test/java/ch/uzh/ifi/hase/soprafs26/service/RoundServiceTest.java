@@ -576,9 +576,13 @@ public class RoundServiceTest {
         when(answerRepository.findByRoundId(10L)).thenReturn(List.of(thisAnswer));
 
         // ScoringService is mocked — its math is exercised by ScoringServiceTest
-        when(scoringService.calculateScore(anyDouble(), anyDouble(), any(Round.class))).thenReturn(2000);
-        when(scoringService.getScoreResult(anyDouble(), anyDouble(), any(Round.class)))
-                .thenReturn(ScoreResult.CORRECT_CITY);
+        doAnswer(invocation -> {
+                Answer answerArg = invocation.getArgument(0); // Get the Answer object passed into the method
+                answerArg.setPointsAwarded(2000);             // Simulate calculateScore returning 2000
+                answerArg.setScoreResult(ScoreResult.CORRECT_CITY); // Simulate getScoreResult returning CORRECT_CITY
+        return null; // Must return null for a void method
+        }).when(scoringService).calculateScore(any(Answer.class), any(Round.class));
+        
         when(scoringService.getStandings("AB-1234")).thenReturn(List.of());
 
         // when — guest submits a pin exactly on the target
@@ -730,9 +734,13 @@ public class RoundServiceTest {
         when(roundRepository.findByLobbyCode("AB-1234")).thenReturn(List.of(round));
 
         // ScoringService stubs (math is exercised in ScoringServiceTest)
-        when(scoringService.calculateScore(anyDouble(), anyDouble(), any(Round.class))).thenReturn(2000);
-        when(scoringService.getScoreResult(anyDouble(), anyDouble(), any(Round.class)))
-                .thenReturn(ScoreResult.CORRECT_CITY);
+
+        doAnswer(invocation -> {
+                Answer answerArg = invocation.getArgument(0);
+                answerArg.setPointsAwarded(2000);         
+                answerArg.setScoreResult(ScoreResult.CORRECT_CITY); 
+        return null; // Must return null for a void method
+        }).when(scoringService).calculateScore(any(Answer.class), any(Round.class));
         when(scoringService.getStandings("AB-1234")).thenReturn(List.of());
 
         // when
@@ -789,9 +797,12 @@ public class RoundServiceTest {
         Answer a2 = new Answer(); a2.setPlayer(u2);
         when(answerRepository.findByRoundId(10L)).thenReturn(Arrays.asList(a1, a2));
 
-        when(scoringService.calculateScore(anyDouble(), anyDouble(), any(Round.class))).thenReturn(2000);
-        when(scoringService.getScoreResult(anyDouble(), anyDouble(), any(Round.class)))
-                .thenReturn(ScoreResult.CORRECT_CITY);
+        doAnswer(invocation -> {
+                Answer answerArg = invocation.getArgument(0);
+                answerArg.setPointsAwarded(2000);         
+                answerArg.setScoreResult(ScoreResult.CORRECT_CITY); 
+        return null; // Must return null for a void method
+        }).when(scoringService).calculateScore(any(Answer.class), any(Round.class));
         when(scoringService.getStandings("AB-1234")).thenReturn(List.of());
 
         // when
@@ -852,9 +863,12 @@ public class RoundServiceTest {
         Answer thisAnswer = new Answer(); thisAnswer.setPlayer(guest);
         when(answerRepository.findByRoundId(10L)).thenReturn(List.of(thisAnswer));
 
-        when(scoringService.calculateScore(anyDouble(), anyDouble(), any(Round.class))).thenReturn(2000);
-        when(scoringService.getScoreResult(anyDouble(), anyDouble(), any(Round.class)))
-                .thenReturn(ScoreResult.CORRECT_CITY);
+        doAnswer(invocation -> {
+            Answer answerArg = invocation.getArgument(0);
+            answerArg.setPointsAwarded(2000);
+            answerArg.setScoreResult(ScoreResult.CORRECT_CITY);
+            return null;
+        }).when(scoringService).calculateScore(any(Answer.class), any(Round.class));
         // Non-empty standings so the broadcast payload is meaningful
         ScoringService.PlayerStanding standing =
                 new ScoringService.PlayerStanding(2L, "guest", 2000);

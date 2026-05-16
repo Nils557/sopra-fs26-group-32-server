@@ -84,13 +84,6 @@ public class Answer {
      * - INCORRECT: > 1000km (Yields 0 points)
      */
 public void calculateScoreBasedOnDistance(ScoringService scoringService) {
-        // Pass 'this.round' to allow service to access TargetCity and TargetCountry
-        this.pointsAwarded = scoringService.calculateScore(
-            this.latitude, this.longitude, this.round
-        );
-        
-        this.scoreResult = scoringService.getScoreResult(
-            this.latitude, this.longitude, this.round
-        );
+        scoringService.calculateScore(this, this.round);
     }
 }
