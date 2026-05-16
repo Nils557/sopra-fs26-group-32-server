@@ -366,6 +366,14 @@ public class RoundService {
         }
     }
 
+    public static class GameEndMessage {
+        public final String event = "GAME_END";
+        public final List<ScoringService.FinalStanding> standings;
+        public GameEndMessage(List<ScoringService.FinalStanding> standings) {
+            this.standings = standings;
+        }
+    }
+
     public Answer submitAnswer(String lobbyCode, Long roundId, Long playerId, Double latitude, Double longitude) {
         // ==========================================
         // 1. VALIDATION
@@ -475,8 +483,9 @@ public class RoundService {
                         if (currentRoundNumber >= totalRounds) {
                             lobby.setStatus(LobbyStatus.FINISHED);
                             lobbyRepository.save(lobby);
-                            messagingTemplate.convertAndSend("/topic/lobby/" + lobbyCode + "/game-state", "GAME_END");
-                            log.info("Broadcasted GAME_END for lobby: {}", lobbyCode);
+                            List<ScoringService.FinalStanding> finalStandings = scoringService.getFinalStandings(lobbyCode);
+                            messagingTemplate.convertAndSend("/topic/lobby/" + lobbyCode + "/game-state", new GameEndMessage(finalStandings));
+                            log.info("Broadcasted GAME_END with final standings for lobby: {}", lobbyCode);
                         } else {
                             messagingTemplate.convertAndSend("/topic/lobby/" + lobbyCode + "/game-state", "NEXT_ROUND");
                             log.info("Broadcasted NEXT_ROUND for lobby: {}", lobbyCode);
