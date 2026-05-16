@@ -23,6 +23,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -1076,14 +1077,16 @@ public class RoundServiceTest {
         // getRoundSummary stubs (called inside handleRoundEnd before the deferred task)
         when(answerRepository.findByRoundId(10L)).thenReturn(List.of());
         when(scoringService.getStandings("AB-1234")).thenReturn(List.of());
+        when(scoringService.getFinalStandings("AB-1234")).thenReturn(List.of());
 
         // when — invoke the private handleRoundEnd via reflection
         ReflectionTestUtils.invokeMethod(roundService, "handleRoundEnd", "AB-1234", round);
 
-        // then — GAME_END broadcast fired on the game-state topic
+        // then — GAME_END broadcast fired on the game-state topic with final standings payload
         verify(messagingTemplate).convertAndSend(
                 eq("/topic/lobby/AB-1234/game-state"),
-                eq((Object) "GAME_END"));
+                (Object) argThat(payload -> payload instanceof RoundService.GameEndMessage
+                        && "GAME_END".equals(((RoundService.GameEndMessage) payload).event)));
         // and the lobby was persisted with FINISHED status
         assertEquals(LobbyStatus.FINISHED, lobby.getStatus(),
                 "lobby status must be flipped to FINISHED on game end");

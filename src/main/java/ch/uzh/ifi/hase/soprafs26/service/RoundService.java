@@ -485,6 +485,7 @@ public class RoundService {
                             lobbyRepository.save(lobby);
                             List<ScoringService.FinalStanding> finalStandings = scoringService.getFinalStandings(lobbyCode);
                             messagingTemplate.convertAndSend("/topic/lobby/" + lobbyCode + "/game-state", new GameEndMessage(finalStandings));
+                            preloadedRounds.remove(lobbyCode);
                             log.info("Broadcasted GAME_END with final standings for lobby: {}", lobbyCode);
                         } else {
                             messagingTemplate.convertAndSend("/topic/lobby/" + lobbyCode + "/game-state", "NEXT_ROUND");
