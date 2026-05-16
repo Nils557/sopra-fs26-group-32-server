@@ -2,9 +2,13 @@ package ch.uzh.ifi.hase.soprafs26.service;
 
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import static org.mockito.ArgumentMatchers.anyDouble;
 import org.mockito.Mock;
+import static org.mockito.Mockito.when;
 import org.mockito.MockitoAnnotations;
 
 import ch.uzh.ifi.hase.soprafs26.entity.Answer;
@@ -14,12 +18,6 @@ import ch.uzh.ifi.hase.soprafs26.entity.User;
 import ch.uzh.ifi.hase.soprafs26.repository.AnswerRepository;
 import ch.uzh.ifi.hase.soprafs26.repository.LobbyRepository;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.LocationResult;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyDouble;
-import static org.mockito.Mockito.when;
 
 /**
  * Unit tests for ScoringService (US7 #104).
@@ -108,7 +106,7 @@ public class ScoringServiceTest {
         // We verify it's greater than 0 but less than the country penalty threshold (1000)
         assertTrue(score > 0, "Score should be greater than 0 for a close guess in a different country");
         assertTrue(score < 1000, "Score should be below the country threshold");
-        assertEquals(733, score, "Score should match the proximity decay for the distance between Berlin and Zurich");
+        assertEquals(330, score, "Score should match the proximity decay for the distance between Berlin and Zurich");
     }
 
     /**

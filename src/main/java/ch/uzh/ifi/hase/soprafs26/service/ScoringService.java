@@ -2,11 +2,13 @@ package ch.uzh.ifi.hase.soprafs26.service;
 
 import java.util.List;
 import java.util.stream.Collectors;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
 import ch.uzh.ifi.hase.soprafs26.constant.ScoreResult;
 import ch.uzh.ifi.hase.soprafs26.entity.Answer;
 import ch.uzh.ifi.hase.soprafs26.entity.Lobby;
@@ -47,9 +49,14 @@ public class ScoringService {
             return (int) Math.max(COUNTRY_PENALTY_THRESHOLD, (MAX_POINTS - 1) - (distance * 0.5));
         }
 
-        // 3. INCORRECT COUNTRY: Proximity decay (0 - 999 range)
-        int distanceScore = (int) Math.max(0, 800 - (distance * 0.1));
-        return Math.min(COUNTRY_PENALTY_THRESHOLD - 1, distanceScore);
+        // 3. WRONG COUNTRY, BUT WITHIN 1000KM THRESHOLD with standard decay (0 - 999 range)
+        if (distance <= 1000.0) {
+            int distanceScore = (int) Math.max(0, 1000 - distance); 
+            return Math.min(COUNTRY_PENALTY_THRESHOLD - 1, distanceScore);
+        }
+
+        // 4. INCORRECT COUNTRY AND TOO FAR AWAY (> 1000km)
+        return 0;
     }
 
     public ScoreResult getScoreResult(double guessLat, double guessLng, Round round) {
