@@ -1,5 +1,6 @@
 package ch.uzh.ifi.hase.soprafs26.service;
 
+import java.time.Instant;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -11,6 +12,7 @@ import org.mockito.Mock;
 import static org.mockito.Mockito.when;
 import org.mockito.MockitoAnnotations;
 
+import ch.uzh.ifi.hase.soprafs26.constant.ScoreResult;
 import ch.uzh.ifi.hase.soprafs26.entity.Answer;
 import ch.uzh.ifi.hase.soprafs26.entity.Lobby;
 import ch.uzh.ifi.hase.soprafs26.entity.Round;
@@ -58,25 +60,38 @@ public class ScoringServiceTest {
      * "ScoringService.calculateScore(...) returning full/half/zero
      * points based on boundary containment".
      */
-    @Test
-    public void calculateScore_atTarget_returns2000() {
+@Test
+    public void calculateScore_atTarget_returnsTimeDecayedMaxScore() {
         // 1. Arrange: Create a real Round object
         Round dummyRound = new Round();
         dummyRound.setTargetLatitude(47.3769);
         dummyRound.setTargetLongitude(8.5417);
         dummyRound.setTargetCity("Zurich");
         dummyRound.setTargetCountry("Switzerland");
+        // CRITICAL: Set the start time so the decay math doesn't throw a NullPointerException!
+        dummyRound.setStartedAt(Instant.now()); 
 
         // 2. Arrange: Stub the geocoding mock to return a valid location
-        // Use ArgumentMatchers.anyDouble() inside the stubbing
         LocationResult mockResult = new LocationResult("Zurich", "Switzerland");
         when(geocodingService.resolveLocation(anyDouble(), anyDouble())).thenReturn(mockResult);
 
         // 3. Act: Execute the real service call with real objects
-        int score = scoringService.calculateScore(47.3769, 8.5417, dummyRound);
+        Answer testAnswer = new Answer();
+        testAnswer.setLatitude(47.3769);
+        testAnswer.setLongitude(8.5417);
+        testAnswer.setSubmittedAt(dummyRound.getStartedAt().plusSeconds(2)); // Answered in 2 seconds
+
+        // Call the master method (using the original name)
+        scoringService.calculateScore(testAnswer, dummyRound);
+
+        int score = testAnswer.getPointsAwarded();
 
         // 4. Assert
-        assertEquals(2000, score);
+        // Base score = 2000. 
+        // 2 seconds elapsed -> (2/45) * 0.5 = 0.02222 penalty. 
+        // 2000 * 0.9777 = 1938 points.
+        assertEquals(1938, score);
+        assertEquals(ScoreResult.CORRECT_CITY, testAnswer.getScoreResult());
     }
 
     /**
@@ -91,22 +106,31 @@ public class ScoringServiceTest {
         round.setTargetLongitude(8.5417);
         round.setTargetCountry("Switzerland");
         round.setTargetCity("Zurich");
+        round.setStartedAt(Instant.now()); 
 
         // 2. STUB: Force the guess to be in a DIFFERENT country (e.g., Germany)
-        // We'll simulate a guess in Berlin (roughly 670km away)
         LocationResult germanyResult = new LocationResult("Berlin", "Germany");
         when(geocodingService.resolveLocation(anyDouble(), anyDouble()))
             .thenReturn(germanyResult);
 
         // 3. Act: Guessing Berlin coordinates
-        int score = scoringService.calculateScore(52.5200, 13.4050, round);
+        Answer berlinAnswer = new Answer();
+        berlinAnswer.setLatitude(52.5200);
+        berlinAnswer.setLongitude(13.4050);
+        berlinAnswer.setSubmittedAt(round.getStartedAt().plusSeconds(10)); // Answered in 10 seconds
+
+        // Call the master method (using the original name)
+        scoringService.calculateScore(berlinAnswer, round);
+
+        int score = berlinAnswer.getPointsAwarded();
 
         // 4. Assert: 
-        // Based on your formula: 800 - (670 * 0.1) = ~733
-        // We verify it's greater than 0 but less than the country penalty threshold (1000)
+        // Because the result is INCORRECT (wrong country), our logic bypasses the speed multiplier.
+        // Base distance is ~670km. Formula: 1000 - 670 = 330.
         assertTrue(score > 0, "Score should be greater than 0 for a close guess in a different country");
         assertTrue(score < 1000, "Score should be below the country threshold");
         assertEquals(330, score, "Score should match the proximity decay for the distance between Berlin and Zurich");
+        assertEquals(ScoreResult.INCORRECT, berlinAnswer.getScoreResult());
     }
 
     /**
