@@ -1363,4 +1363,218 @@ public class RoundServiceTest {
         // short-circuited BEFORE the save step
         verify(answerRepository, never()).save(any(Answer.class));
     }
+
+    // -------------------------------------------------------------------
+    // US12 — Final-results screen (#170, #173, #174)
+    // -------------------------------------------------------------------
+
+    /**
+     * US12 #170 — Game-end broadcast payload carries the ranked
+     * final standings.
+     *
+     * The existing handleRoundEnd_lastRoundCompleted_… test (US10 #155)
+     * pins the destination string and the GameEndMessage type, but it
+     * does not assert on the standings list inside the payload. This
+     * test focuses specifically on the standings flow:
+     * ScoringService.getFinalStandings → GameEndMessage.standings →
+     * /topic/lobby/{code}/game-state. The frontend's final-results
+     * screen reads this list directly.
+     *
+     * MANUAL SABOTAGE: At RoundService.java line 487, change
+     *     new GameEndMessage(finalStandings)
+     * to
+     *     new GameEndMessage(List.of())
+     * The broadcast's payload.standings is now empty. The assertion
+     * msg.standings.size() == 3 fails. Proves the test pins the
+     * flow of standings from the scoring service into the broadcast
+     * — a regression where the standings are silently dropped is
+     * caught, even if the broadcast itself still fires.
+     */
+    @Test
+    public void handleRoundEnd_lastRoundCompleted_gameEndPayloadCarriesRankedStandings() {
+        // given — mock scheduler runs scheduled runnables immediately
+        ScheduledExecutorService mockScheduler = mock(ScheduledExecutorService.class);
+        when(mockScheduler.schedule(any(Runnable.class), anyLong(), any(TimeUnit.class)))
+                .thenAnswer(inv -> {
+                    Runnable runnable = inv.getArgument(0);
+                    runnable.run();
+                    return mock(ScheduledFuture.class);
+                });
+        ReflectionTestUtils.setField(roundService, "scheduler", mockScheduler);
+
+        Lobby lobby = new Lobby();
+        lobby.setLobbyCode("AB-1234");
+        lobby.setTotalRounds(1);
+        when(lobbyRepository.findByLobbyCode("AB-1234")).thenReturn(lobby);
+
+        Round round = new Round();
+        round.setId(10L);
+        round.setLobbyCode("AB-1234");
+        when(roundRepository.findById(10L)).thenReturn(Optional.of(round));
+        when(roundRepository.findByLobbyCode("AB-1234")).thenReturn(List.of(round));
+        when(roundRepository.save(any(Round.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(answerRepository.findByRoundId(10L)).thenReturn(List.of());
+        when(scoringService.getStandings("AB-1234")).thenReturn(List.of());
+
+        // Stub the ranked standings the GAME_END branch will fetch
+        List<ScoringService.FinalStanding> standings = List.of(
+                new ScoringService.FinalStanding(1, 1L, "alice", 300),
+                new ScoringService.FinalStanding(2, 2L, "bob", 200),
+                new ScoringService.FinalStanding(3, 3L, "carol", 100));
+        when(scoringService.getFinalStandings("AB-1234")).thenReturn(standings);
+
+        // when — invoke the private handleRoundEnd via reflection
+        ReflectionTestUtils.invokeMethod(roundService, "handleRoundEnd", "AB-1234", round);
+
+        // then — capture the /game-state payload and verify the standings flowed through
+        ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
+        verify(messagingTemplate).convertAndSend(
+                eq("/topic/lobby/AB-1234/game-state"),
+                captor.capture());
+
+        Object payload = captor.getValue();
+        assertTrue(payload instanceof RoundService.GameEndMessage,
+                "payload must be a GameEndMessage, got: " + payload.getClass().getName());
+
+        RoundService.GameEndMessage msg = (RoundService.GameEndMessage) payload;
+        assertEquals("GAME_END", msg.event, "event field must be the literal \"GAME_END\"");
+        assertEquals(3, msg.standings.size(), "standings list must carry all three players");
+        assertEquals(1, msg.standings.get(0).rank);
+        assertEquals("alice", msg.standings.get(0).username);
+        assertEquals(300, msg.standings.get(0).totalScore);
+        assertEquals(2, msg.standings.get(1).rank);
+        assertEquals("bob", msg.standings.get(1).username);
+        assertEquals(3, msg.standings.get(2).rank);
+        assertEquals("carol", msg.standings.get(2).username);
+    }
+
+    /**
+     * US12 #173 — On game end, the lobby's status is flipped to
+     * FINISHED in the DB, but NO individual scores are persisted.
+     *
+     * Scores are ephemeral by design: they are computed per-round and
+     * aggregated in memory by ScoringService at query time. The
+     * game-end transition must not write any "total score" Answer
+     * rows or similar score-snapshot entities, because that would
+     * duplicate the source of truth (Answer.pointsAwarded per round)
+     * and risk divergence on later refactors.
+     *
+     * MANUAL SABOTAGE A (broken contract — accidental persistence):
+     * Add the line
+     *     answerRepository.save(new Answer());
+     * anywhere inside the GAME_END branch lambda (around
+     * RoundService.java line 487). The verify(answerRepository,
+     * never()).save(...) assertion fails. Catches a future refactor
+     * that decides to "cache" totals as DB rows.
+     *
+     * MANUAL SABOTAGE B (broken contract — status not flipped):
+     * Comment out lobby.setStatus(LobbyStatus.FINISHED) at
+     * RoundService.java line 484. The assertEquals(FINISHED,
+     * lobby.getStatus()) fails. Catches a regression where the lobby
+     * is never marked done and would appear forever as INGAME.
+     */
+    @Test
+    public void handleRoundEnd_lastRoundCompleted_persistsFinishedStatusButDoesNotSaveScores() {
+        // given — same scheduler injection as the payload test above
+        ScheduledExecutorService mockScheduler = mock(ScheduledExecutorService.class);
+        when(mockScheduler.schedule(any(Runnable.class), anyLong(), any(TimeUnit.class)))
+                .thenAnswer(inv -> {
+                    Runnable runnable = inv.getArgument(0);
+                    runnable.run();
+                    return mock(ScheduledFuture.class);
+                });
+        ReflectionTestUtils.setField(roundService, "scheduler", mockScheduler);
+
+        Lobby lobby = new Lobby();
+        lobby.setLobbyCode("AB-1234");
+        lobby.setTotalRounds(1);
+        when(lobbyRepository.findByLobbyCode("AB-1234")).thenReturn(lobby);
+
+        Round round = new Round();
+        round.setId(10L);
+        round.setLobbyCode("AB-1234");
+        when(roundRepository.findById(10L)).thenReturn(Optional.of(round));
+        when(roundRepository.findByLobbyCode("AB-1234")).thenReturn(List.of(round));
+        when(roundRepository.save(any(Round.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(answerRepository.findByRoundId(10L)).thenReturn(List.of());
+        when(scoringService.getStandings("AB-1234")).thenReturn(List.of());
+        when(scoringService.getFinalStandings("AB-1234")).thenReturn(List.of());
+
+        // when
+        ReflectionTestUtils.invokeMethod(roundService, "handleRoundEnd", "AB-1234", round);
+
+        // then — lobby status was flipped and persisted
+        assertEquals(LobbyStatus.FINISHED, lobby.getStatus(),
+                "lobby status must be FINISHED on game end");
+        verify(lobbyRepository).save(lobby);
+
+        // AND no Answer rows were written — scores stay ephemeral
+        verify(answerRepository, never()).save(any(Answer.class));
+    }
+
+    /**
+     * US12 #174 — In-memory preloaded-round cache is cleared on
+     * game end.
+     *
+     * preloadedRounds is an in-memory ConcurrentHashMap that buffers
+     * the next round's Mapillary content during gameplay (to make
+     * round transitions feel instant). When the game ends, any
+     * leftover entry for this lobby must be cleaned up so it doesn't
+     * leak between sessions or feed stale data into a future game
+     * created with the same lobby code.
+     *
+     * The test pre-populates the cache via reflection, runs
+     * handleRoundEnd, and asserts the entry is gone.
+     *
+     * MANUAL SABOTAGE: At RoundService.java line 488, comment out
+     *     preloadedRounds.remove(lobbyCode);
+     * The cache entry survives the game end. The assertFalse
+     * (containsKey("AB-1234")) assertion fails. Proves the test pins
+     * the cleanup call specifically — without it, the test wouldn't
+     * know whether the absence of an entry was due to cleanup or due
+     * to nothing ever having been put there.
+     */
+    @SuppressWarnings("unchecked")
+    @Test
+    public void handleRoundEnd_lastRoundCompleted_clearsPreloadedRoundCacheForLobby() {
+        // given — same scheduler injection as the other US12 tests
+        ScheduledExecutorService mockScheduler = mock(ScheduledExecutorService.class);
+        when(mockScheduler.schedule(any(Runnable.class), anyLong(), any(TimeUnit.class)))
+                .thenAnswer(inv -> {
+                    Runnable runnable = inv.getArgument(0);
+                    runnable.run();
+                    return mock(ScheduledFuture.class);
+                });
+        ReflectionTestUtils.setField(roundService, "scheduler", mockScheduler);
+
+        // pre-populate the preloadedRounds cache so we have something to assert was cleared
+        Map<String, Round> preloadedRounds = (Map<String, Round>) ReflectionTestUtils.getField(
+                roundService, "preloadedRounds");
+        assertNotNull(preloadedRounds, "preloadedRounds field must be reachable");
+        preloadedRounds.put("AB-1234", new Round());
+        assertTrue(preloadedRounds.containsKey("AB-1234"),
+                "precondition: cache must contain the entry we are about to clear");
+
+        Lobby lobby = new Lobby();
+        lobby.setLobbyCode("AB-1234");
+        lobby.setTotalRounds(1);
+        when(lobbyRepository.findByLobbyCode("AB-1234")).thenReturn(lobby);
+
+        Round round = new Round();
+        round.setId(10L);
+        round.setLobbyCode("AB-1234");
+        when(roundRepository.findById(10L)).thenReturn(Optional.of(round));
+        when(roundRepository.findByLobbyCode("AB-1234")).thenReturn(List.of(round));
+        when(roundRepository.save(any(Round.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(answerRepository.findByRoundId(10L)).thenReturn(List.of());
+        when(scoringService.getStandings("AB-1234")).thenReturn(List.of());
+        when(scoringService.getFinalStandings("AB-1234")).thenReturn(List.of());
+
+        // when
+        ReflectionTestUtils.invokeMethod(roundService, "handleRoundEnd", "AB-1234", round);
+
+        // then — the cache entry for this lobby is gone
+        assertFalse(preloadedRounds.containsKey("AB-1234"),
+                "preloadedRounds[AB-1234] must be cleared by the GAME_END cleanup");
+    }
 }

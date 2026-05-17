@@ -367,6 +367,45 @@ public class LobbyControllerTest {
     }
 
     /**
+     * US12 #172 — GET /lobbies/{code}/results fallback endpoint.
+     *
+     * Returns the ranked final standings as a JSON array. The frontend
+     * uses this as a fallback when clients missed the WebSocket
+     * /topic/lobby/{code}/game-state broadcast (for example: a player
+     * was temporarily disconnected at the exact moment the game ended).
+     * Without this endpoint, those players would never see the final
+     * results.
+     *
+     * MANUAL SABOTAGE: At LobbyController.java line 103, change the
+     * URL from
+     *     @GetMapping("/lobbies/{code}/results")
+     * to (singular form)
+     *     @GetMapping("/lobbies/{code}/result")
+     * Spring no longer routes the /results request → 404 → the
+     * status().isOk() assertion fails. Proves the test pins the exact
+     * URL the frontend depends on; a plural/singular typo is caught
+     * before it can silently break the fallback in production.
+     */
+    @Test
+    public void getFinalResults_existingLobby_returns200WithRankedStandingsList() throws Exception {
+        // given — service returns a 2-entry ranked list
+        List<ScoringService.FinalStanding> standings = List.of(
+                new ScoringService.FinalStanding(1, 7L, "host", 2000),
+                new ScoringService.FinalStanding(2, 8L, "guest", 1500));
+        given(scoringService.getFinalStandings("AB-1234")).willReturn(standings);
+
+        // when / then — GET returns 200 + JSON array with rank/username/totalScore
+        mockMvc.perform(get("/lobbies/{code}/results", "AB-1234"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].rank", is(1)))
+                .andExpect(jsonPath("$[0].username", is("host")))
+                .andExpect(jsonPath("$[0].totalScore", is(2000)))
+                .andExpect(jsonPath("$[1].rank", is(2)))
+                .andExpect(jsonPath("$[1].username", is("guest")))
+                .andExpect(jsonPath("$[1].totalScore", is(1500)));
+    }
+
+    /**
      * Helper to convert a DTO to a JSON string for MockMvc request
      * bodies. Same pattern as UserControllerTest#asJsonString.
      */

@@ -239,4 +239,72 @@ public class ScoringServiceTest {
         assertTrue(result.isEmpty(),
                 "unknown lobby code must yield an empty leaderboard, not null or NPE");
     }
+
+    /**
+     * US12 #171 — getFinalStandings wraps getStandings and assigns
+     * consecutive ranks (1, 2, 3, ...) in descending-totalScore order.
+     *
+     * The end-of-game results screen needs an explicit `rank` field on
+     * each player so the frontend can render "1st", "2nd", "3rd" badges
+     * without re-computing position from the array index. This test
+     * verifies both the rank assignment AND that the sort order from
+     * getStandings carries through unchanged.
+     *
+     * MANUAL SABOTAGE: At ScoringService.java line 156, change
+     *     int[] rank = {1};
+     * to
+     *     int[] rank = {0};
+     * Every rank shifts down by one (alice would now be rank 0, bob
+     * rank 1, etc.). The assertEquals(1, result.get(0).rank) fails.
+     * Proves the test pins the "ranks start at 1" contract — an
+     * off-by-one in the rank counter is caught.
+     */
+    @Test
+    public void getFinalStandings_multiplePlayers_assignsConsecutiveRanksStartingAtOne() {
+        // given — three players in lobby AB-1234 with deliberately
+        // different totals (300 / 200 / 150) so sort order is unambiguous
+        User alice = new User(); alice.setId(1L); alice.setUsername("alice");
+        User bob = new User(); bob.setId(2L); bob.setUsername("bob");
+        User carol = new User(); carol.setId(3L); carol.setUsername("carol");
+
+        Lobby lobby = new Lobby();
+        lobby.setLobbyCode("AB-1234");
+        lobby.getPlayers().add(alice);
+        lobby.getPlayers().add(bob);
+        lobby.getPlayers().add(carol);
+        when(lobbyRepository.findByLobbyCode("AB-1234")).thenReturn(lobby);
+
+        Answer a1 = new Answer(); a1.setPointsAwarded(100);
+        Answer a2 = new Answer(); a2.setPointsAwarded(100);
+        Answer a3 = new Answer(); a3.setPointsAwarded(100);
+        when(answerRepository.findByPlayerIdAndRound_LobbyCode(1L, "AB-1234"))
+                .thenReturn(List.of(a1, a2, a3));
+
+        Answer b1 = new Answer(); b1.setPointsAwarded(50);
+        Answer b2 = new Answer(); b2.setPointsAwarded(50);
+        Answer b3 = new Answer(); b3.setPointsAwarded(100);
+        when(answerRepository.findByPlayerIdAndRound_LobbyCode(2L, "AB-1234"))
+                .thenReturn(List.of(b1, b2, b3));
+
+        Answer c1 = new Answer(); c1.setPointsAwarded(50);
+        Answer c2 = new Answer(); c2.setPointsAwarded(50);
+        Answer c3 = new Answer(); c3.setPointsAwarded(50);
+        when(answerRepository.findByPlayerIdAndRound_LobbyCode(3L, "AB-1234"))
+                .thenReturn(List.of(c1, c2, c3));
+
+        // when
+        List<ScoringService.FinalStanding> result = scoringService.getFinalStandings("AB-1234");
+
+        // then — three entries, ranks 1/2/3, in descending-totalScore order
+        assertEquals(3, result.size(), "every player in the lobby must appear once");
+        assertEquals(1, result.get(0).rank, "first entry's rank must be 1");
+        assertEquals("alice", result.get(0).username);
+        assertEquals(300, result.get(0).totalScore);
+        assertEquals(2, result.get(1).rank, "second entry's rank must be 2");
+        assertEquals("bob", result.get(1).username);
+        assertEquals(200, result.get(1).totalScore);
+        assertEquals(3, result.get(2).rank, "third entry's rank must be 3");
+        assertEquals("carol", result.get(2).username);
+        assertEquals(150, result.get(2).totalScore);
+    }
 }
