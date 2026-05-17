@@ -2,13 +2,8 @@ package ch.uzh.ifi.hase.soprafs26.service;
 
 import java.time.Duration;
 import java.util.List;
-import java.util.stream.Collectors;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import ch.uzh.ifi.hase.soprafs26.constant.ScoreResult;
 import ch.uzh.ifi.hase.soprafs26.entity.Answer;
@@ -21,7 +16,6 @@ import ch.uzh.ifi.hase.soprafs26.util.DistanceCalculator;
 
 @Service
 public class ScoringService {
-    private static final Logger log = LoggerFactory.getLogger(ScoringService.class);
     private static final int MAX_POINTS = 2000;
     private static final int COUNTRY_PENALTY_THRESHOLD = 1000;
     private static final long MAX_ROUND_TIME_SECONDS = 45;
@@ -30,7 +24,6 @@ public class ScoringService {
     private final LobbyRepository lobbyRepository;
     private final GeocodingService geocodingService;
 
-    @Autowired
     public ScoringService(AnswerRepository answerRepository, LobbyRepository lobbyRepository, GeocodingService geocodingService) {
         this.answerRepository = answerRepository;
         this.lobbyRepository = lobbyRepository;
@@ -111,7 +104,6 @@ public class ScoringService {
 
     // ------------------------END HELPER METHODS FOR SCORE CALCULATION------------------------
 
-    @Transactional
     public List<PlayerStanding> getStandings(String lobbyCode) {
         Lobby lobby = lobbyRepository.findByLobbyCode(lobbyCode);
         if (lobby == null) return List.of();
@@ -123,7 +115,7 @@ public class ScoringService {
                 return new PlayerStanding(p.getId(), p.getUsername(), totalScore);
             })
             .sorted((a, b) -> Integer.compare(b.totalScore, a.totalScore))
-            .collect(Collectors.toList());
+            .toList();
     }
 
     public static class PlayerStanding {
@@ -156,7 +148,7 @@ public class ScoringService {
         int[] rank = {1};
         return standings.stream()
             .map(s -> new FinalStanding(rank[0]++, s.playerId, s.username, s.totalScore))
-            .collect(Collectors.toList());
+            .toList();
     }
 }
 

@@ -1,8 +1,8 @@
 package ch.uzh.ifi.hase.soprafs26.rest.mapper;
 
-import org.mapstruct.*;
+import org.mapstruct.Mapping;
+import org.mapstruct.Mapper;
 import org.mapstruct.factory.Mappers;
-import java.time.Instant;
 import java.util.List;
 
 import ch.uzh.ifi.hase.soprafs26.entity.User;
@@ -37,6 +37,9 @@ public interface DTOMapper {
 	DTOMapper INSTANCE = Mappers.getMapper(DTOMapper.class);
 
 	@Mapping(source = "username", target = "username")
+	@Mapping(target = "id", ignore = true)
+	@Mapping(target = "createdAt", ignore = true)
+	@Mapping(target = "status", ignore = true)
 	User convertUserPostDTOtoEntity(UserPostDTO userPostDTO);
 
 	@Mapping(source = "id", target = "id")
@@ -49,6 +52,11 @@ public interface DTOMapper {
     @Mapping(source = "hostUserId", target = "hostUserId")
     @Mapping(source = "maxPlayers", target = "maxPlayers")
     @Mapping(source = "totalRounds", target = "totalRounds")
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "lobbyCode", ignore = true)
+    @Mapping(target = "status", ignore = true)
+    @Mapping(target = "players", ignore = true)
+    @Mapping(target = "createdAt", ignore = true)
     Lobby convertLobbyPostDTOtoEntity(LobbyPostDTO lobbyPostDTO);
 
     @Mapping(source = "id", target = "id")
@@ -57,6 +65,7 @@ public interface DTOMapper {
     @Mapping(source = "totalRounds", target = "totalRounds")
     @Mapping(source = "status", target = "status")
     @Mapping(source = "hostUserId", target = "hostUserId")
+    @Mapping(target = "hostUsername", ignore = true)
     LobbyGetDTO convertEntityToLobbyGetDTO(Lobby lobby);
 
     // LobbyStartGetDTO mappings
@@ -66,6 +75,12 @@ public interface DTOMapper {
 
     @Mapping(source = "latitude", target = "latitude")
     @Mapping(source = "longitude", target = "longitude")
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "scoreResult", ignore = true)
+    @Mapping(target = "pointsAwarded", ignore = true)
+    @Mapping(target = "submittedAt", ignore = true)
+    @Mapping(target = "round", ignore = true)
+    @Mapping(target = "player", ignore = true)
     Answer convertAnswerPostDTOtoEntity(AnswerPostDTO answerPostDTO);
 
     @Mapping(source = "id", target = "id")

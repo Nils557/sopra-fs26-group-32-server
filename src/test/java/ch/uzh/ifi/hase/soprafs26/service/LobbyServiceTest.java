@@ -728,12 +728,12 @@ public class LobbyServiceTest {
         verify(messagingTemplate).convertAndSend(
                 eq("/topic/lobby/AB-1234/start"),
                 any(Object.class));
-        verify(roundService).startRoundWithTimerAsync("AB-1234");
+        verify(roundService).startRoundAsync("AB-1234");
 
         // crucially: the SYNCHRONOUS round method must NOT be called —
         // that path would block on Mapillary HTTP and re-introduce the
         // "POST hangs for 30s" bug.
-        verify(roundService, never()).startRoundWithTimer(anyString());
+        verify(roundService, never()).executeRoundGameplay(anyString());
     }
 
     /**
@@ -780,7 +780,7 @@ public class LobbyServiceTest {
         order.verify(messagingTemplate).convertAndSend(
                 eq("/topic/lobby/AB-1234/start"),
                 any(Object.class));
-        order.verify(roundService).startRoundWithTimerAsync("AB-1234");
+        order.verify(roundService).startRoundAsync("AB-1234");
     }
 
     /**
@@ -811,7 +811,7 @@ public class LobbyServiceTest {
         // no side effects
         verify(lobbyRepository, never()).save(any(Lobby.class));
         verify(messagingTemplate, never()).convertAndSend(anyString(), any(Object.class));
-        verify(roundService, never()).startRoundWithTimerAsync(anyString());
+        verify(roundService, never()).startRoundAsync(anyString());
     }
 
     /**
@@ -846,7 +846,7 @@ public class LobbyServiceTest {
         assertEquals(403, ex.getStatusCode().value());
 
         assertEquals(LobbyStatus.WAITING, lobby.getStatus(), "status must remain WAITING");
-        verify(roundService, never()).startRoundWithTimerAsync(anyString());
+        verify(roundService, never()).startRoundAsync(anyString());
     }
 
     /**
@@ -875,7 +875,7 @@ public class LobbyServiceTest {
                 () -> lobbyService.startGame("AB-1234", 1L));
         assertEquals(409, ex.getStatusCode().value());
 
-        verify(roundService, never()).startRoundWithTimerAsync(anyString());
+        verify(roundService, never()).startRoundAsync(anyString());
     }
 
     /**
@@ -894,7 +894,7 @@ public class LobbyServiceTest {
         // userRepository.findById must not be queried — the lobby check
         // happens first, so a missing lobby short-circuits the whole flow
         verify(userRepository, never()).findById(any());
-        verify(roundService, never()).startRoundWithTimerAsync(anyString());
+        verify(roundService, never()).startRoundAsync(anyString());
     }
 
     /**
@@ -919,6 +919,6 @@ public class LobbyServiceTest {
                 () -> lobbyService.startGame("AB-1234", 1L));
         assertEquals(404, ex.getStatusCode().value());
 
-        verify(roundService, never()).startRoundWithTimerAsync(anyString());
+        verify(roundService, never()).startRoundAsync(anyString());
     }
 }

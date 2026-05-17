@@ -1,5 +1,6 @@
 package ch.uzh.ifi.hase.soprafs26.service;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -11,13 +12,12 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.HttpStatus;
+import org.springframework.messaging.MessagingException;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,13 +37,14 @@ import ch.uzh.ifi.hase.soprafs26.repository.RoundRepository;
 import ch.uzh.ifi.hase.soprafs26.repository.UserRepository;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.LocationResult;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.RoundSummaryGetDTO;
-import ch.uzh.ifi.hase.soprafs26.rest.dto.SubmissionUpdateDTO;
 import ch.uzh.ifi.hase.soprafs26.rest.mapper.DTOMapper;
 import jakarta.annotation.PostConstruct;
 
 @Service
 @Transactional
 public class RoundService {
+
+    private static final String GAME_TOPIC_PREFIX = "/topic/game/";
 
     private final RoundRepository roundRepository;
     private final MapillaryService mapillaryService;
@@ -54,7 +55,7 @@ public class RoundService {
     private final Map<String, ScheduledFuture<?>> activeCountdownTimers = new ConcurrentHashMap<>();
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(4);
     private final LobbyRepository lobbyRepository;
-    private final UserRepository UserRepository;
+    private final UserRepository userRepository;
     private final AnswerRepository answerRepository;
     private final ScoringService scoringService;
     private final Map<String, Round> preloadedRounds = new ConcurrentHashMap<>();
@@ -91,8 +92,7 @@ public class RoundService {
         public void setName(String name) { this.name = name; }
     }
 
-    @Autowired
-        public RoundService(
+    public RoundService(
             RoundRepository roundRepository, 
             MapillaryService mapillaryService, 
             SimpMessagingTemplate messagingTemplate, 
@@ -107,7 +107,7 @@ public class RoundService {
             this.mapillaryService = mapillaryService;
             this.messagingTemplate = messagingTemplate;
             this.lobbyRepository = lobbyRepository;
-            this.UserRepository = userRepository; 
+            this.userRepository = userRepository; 
             this.answerRepository = answerRepository;
             this.scoringService = scoringService;
             this.geocodingService = geocodingService; 
@@ -122,9 +122,9 @@ public class RoundService {
             // Read the JSON file from the resources folder
             InputStream inputStream = new ClassPathResource("locations.json").getInputStream();
             locationsDataset = objectMapper.readValue(inputStream, new TypeReference<List<CuratedLocation>>(){});
-            System.out.println("SUCCESS: Loaded " + locationsDataset.size() + " verified global locations into memory!");
-        } catch (Exception e) {
-            System.err.println("FAILED to load locations.json: " + e.getMessage());
+            log.info("SUCCESS: Loaded {} verified global locations into memory!", locationsDataset.size());
+        } catch (IOException e) {
+            log.error("FAILED to load locations.json", e);
             // Fallback just in case the file is deleted or unreadable
             locationsDataset.add(new CuratedLocation(47.3769, 8.5417, "Zurich, Switzerland"));
         }
@@ -164,7 +164,7 @@ public class RoundService {
         });
     }
 
-    public Round createAndStartRound(String lobbyCode) {
+    public Round resolveRoundData(String lobbyCode) {
 
         // 1. Check if we have a round pre-fetched in memory
         Round readyRound = preloadedRounds.remove(lobbyCode);
@@ -185,17 +185,16 @@ public class RoundService {
             
             try { 
                 // Try our luck with a random city
-                Round round = tryCreateRound(lobbyCode, selectedLocation.getLatitude(), selectedLocation.getLongitude(), 0.002);
+                Round round = buildRoundFromCoordinates(lobbyCode, selectedLocation.getLatitude(), selectedLocation.getLongitude(), 0.002);
                 
                 // If the line above doesn't throw an error, it succeeded!
-                log.info("Game started in: " + selectedLocation.getName());
+                log.info("Game started in: {}", selectedLocation.getName());
                 return round;
 
             } catch (Exception e) {
                 // If tryCreateRound fails, it jumps directly here
                 String apiError = e.getMessage();
-                log.info("Attempt " + attempt + " failed for " + selectedLocation.getName() + 
-                                ". API Reason: " + apiError + " | Retrying...");
+                log.info("Attempt {} failed for {}. API Reason: {} | Retrying...", attempt, selectedLocation.getName(), apiError);
             }
         }
 
@@ -203,7 +202,7 @@ public class RoundService {
         
         try {
             // Zurich HB coordinates are guaranteed to have thousands of Mapillary images
-            Round fallbackRound = tryCreateRound(lobbyCode, 47.3769, 8.5417, 0.001);
+            Round fallbackRound = buildRoundFromCoordinates(lobbyCode, 47.3769, 8.5417, 0.001);
             log.info("Fail-safe successful: Game started in Zurich.");
             return fallbackRound;
 
@@ -218,7 +217,7 @@ public class RoundService {
     /**
      * Helper method to reduce code duplication
      */
-    private Round tryCreateRound(String lobbyCode, double lat, double lon, double delta) {
+    private Round buildRoundFromCoordinates(String lobbyCode, double lat, double lon, double delta) {
         List<String> imageUrls = mapillaryService.getImageSequence(lon - delta, lat - delta, lon + delta, lat + delta, 5);
         
         // Resolve target names once here
@@ -229,24 +228,29 @@ public class RoundService {
         round.setTargetLatitude(lat);
         round.setTargetLongitude(lon);
         round.setImageSequence(imageUrls);
-        round.setTargetCity(location.getCity()); // Ensure these match the resolved API names
+        round.setTargetCity(location.getCity()); 
         round.setTargetCountry(location.getCountry());
         
         return roundRepository.save(round);
     }
 
-    public void startRoundWithTimerAsync(String lobbyCode) {
+    public void startRoundAsync(String lobbyCode) {
         scheduler.execute(() -> {
             try {
-                startRoundWithTimer(lobbyCode);
+                executeRoundGameplay(lobbyCode);
             } catch (Exception e) {
-                log.error("Round bootstrap failed for lobby " + lobbyCode + ": " + e.getMessage());
+                log.error("Round bootstrap failed for lobby {}: {}", lobbyCode, e.getMessage());
             }
         });
     }
 
-    public Round startRoundWithTimer(String lobbyCode) {
-        Round round = createAndStartRound(lobbyCode);
+    public Round executeRoundGameplay(String lobbyCode) {
+        Round initialRound = resolveRoundData(lobbyCode);
+
+        // mark round as started
+        initialRound.setStartedAt(java.time.Instant.now());
+        Round round = roundRepository.save(initialRound); 
+        
         List<String> images = round.getImageSequence();
 
         Lobby lobby = lobbyRepository.findByLobbyCode(lobbyCode);
@@ -255,7 +259,7 @@ public class RoundService {
 
         // Send first image immediately
         messagingTemplate.convertAndSend(
-            "/topic/game/" + lobbyCode + "/image",
+            GAME_TOPIC_PREFIX + lobbyCode + "/image",
             new ImageBroadcastMessage(round.getId(), images.get(0), 0, roundNumber, totalRounds, 45)
         );
 
@@ -290,7 +294,7 @@ public class RoundService {
             
             //#112 — Broadcast timer tick
             messagingTemplate.convertAndSend(
-                "/topic/game/" + lobbyCode + "/timer",
+                GAME_TOPIC_PREFIX + lobbyCode + "/timer",
                 timeLeft[0]
             );
         
@@ -311,7 +315,7 @@ public class RoundService {
         ScheduledFuture<?> future = activeCountdownTimers.remove(lobbyCode);
             if (future != null) {
                 future.cancel(false);
-                log.info("Countdown timer stopped for lobby: " + lobbyCode);
+                log.info("Countdown timer stopped for lobby: {}", lobbyCode);
         }
     }
 
@@ -319,7 +323,7 @@ public class RoundService {
         ScheduledFuture<?> future = activeTimers.remove(lobbyCode);
             if (future != null) {
                 future.cancel(false);
-                log.info("Timer stopped for lobby: " + lobbyCode);
+                log.info("Timer stopped for lobby: {}", lobbyCode);
             }
     }
 
@@ -332,7 +336,7 @@ public class RoundService {
     }
     public void broadcastImage(String lobbyCode, Long roundId, String imageUrl, int index, int roundNumber, int totalRounds) {
         messagingTemplate.convertAndSend(
-            "/topic/game/" + lobbyCode + "/image",
+            GAME_TOPIC_PREFIX + lobbyCode + "/image",
             new ImageBroadcastMessage(roundId, imageUrl, index, roundNumber, totalRounds, 45)
         );
     }
@@ -367,7 +371,7 @@ public class RoundService {
     }
 
     public static class GameEndMessage {
-        public final String event = "GAME_END";
+        public static final String EVENT = "GAME_END";
         public final List<ScoringService.FinalStanding> standings;
         public GameEndMessage(List<ScoringService.FinalStanding> standings) {
             this.standings = standings;
@@ -401,7 +405,7 @@ public class RoundService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Round has already finished");
         }
 
-        User player = UserRepository.findById(playerId) // Fixed capitalization
+        User player = userRepository.findById(playerId) // Fixed capitalization
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Player not found"));
 
         if (answerRepository.existsByRoundIdAndPlayerId(roundId, playerId)) {
@@ -433,7 +437,7 @@ public class RoundService {
         
         List<AnswerState> states = roundAnswers.stream()
             .map(a -> new AnswerState(a.getPlayer().getId(), a.getPlayer().getUsername(), true))
-            .collect(Collectors.toList());
+            .toList();
             
         gameEventService.broadcastAnswerStates(lobbyCode, states);
         gameEventService.broadcastScores(lobbyCode, scoringService.getStandings(lobbyCode));
@@ -463,12 +467,12 @@ public class RoundService {
         
         // Broadcast round end event to trigger summary screen on frontend
         messagingTemplate.convertAndSend(
-            "/topic/game/" + lobbyCode + "/roundEnd",
+            GAME_TOPIC_PREFIX + lobbyCode + "/roundEnd",
             "ROUND_ENDED"
         );
         try {
             RoundSummaryGetDTO summaryPayload = getRoundSummary(lobbyCode, round.getId());
-            messagingTemplate.convertAndSend("/topic/lobby/" + lobbyCode + "/summary", summaryPayload);
+            messagingTemplate.convertAndSend(GAME_TOPIC_PREFIX + lobbyCode + "/summary", summaryPayload);
             log.info("Successfully broadcasted summary screen payload.");
 
             Lobby lobby = lobbyRepository.findByLobbyCode(lobbyCode);
@@ -484,22 +488,22 @@ public class RoundService {
                             lobby.setStatus(LobbyStatus.FINISHED);
                             lobbyRepository.save(lobby);
                             List<ScoringService.FinalStanding> finalStandings = scoringService.getFinalStandings(lobbyCode);
-                            messagingTemplate.convertAndSend("/topic/lobby/" + lobbyCode + "/game-state", new GameEndMessage(finalStandings));
+                            messagingTemplate.convertAndSend(GAME_TOPIC_PREFIX + lobbyCode + "/game-state", new GameEndMessage(finalStandings));
                             preloadedRounds.remove(lobbyCode);
                             log.info("Broadcasted GAME_END with final standings for lobby: {}", lobbyCode);
                         } else {
-                            messagingTemplate.convertAndSend("/topic/lobby/" + lobbyCode + "/game-state", "NEXT_ROUND");
+                            messagingTemplate.convertAndSend(GAME_TOPIC_PREFIX + lobbyCode + "/game-state", "NEXT_ROUND");
                             log.info("Broadcasted NEXT_ROUND for lobby: {}", lobbyCode);
-                            startRoundWithTimer(lobbyCode); // Start Round 2!
+                            executeRoundGameplay(lobbyCode); // Start Round 2!
                         }
-                    } catch (Exception e) {
+                    } catch (MessagingException e) {
                         log.error("CRASH INSIDE SCHEDULER: ", e); // Catch errors inside the timer
                     }
                 }, 10, TimeUnit.SECONDS);
             } else {
                 log.error("Lobby was NULL when trying to schedule the next round!");
             }
-        } catch (Exception e) {
+        } catch (MessagingException e) {
             log.error("CRITICAL CRASH DURING ROUND END TRANSITION: ", e); // Catch the silent killer!
         }
     }
@@ -519,7 +523,7 @@ public class RoundService {
         
         List<Long> submittedIds = answers.stream()
             .map(answer -> answer.getPlayer().getId())
-            .collect(Collectors.toList());
+            .toList();
             
         // Set the transient field so DTOMapper can automatically pick it up
         round.setSubmittedPlayerIds(submittedIds);
