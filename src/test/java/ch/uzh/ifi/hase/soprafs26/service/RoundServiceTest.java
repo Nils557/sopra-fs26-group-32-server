@@ -151,7 +151,7 @@ public class RoundServiceTest {
                 .thenReturn(new ch.uzh.ifi.hase.soprafs26.rest.dto.LocationResult("NYC", "USA"));
 
         // when
-        Round round = roundService.createAndStartRound("AB-1234");
+        Round round = roundService.resolveRoundData("AB-1234");
 
         // then
         assertNotNull(round);
@@ -192,7 +192,7 @@ public class RoundServiceTest {
         when(roundRepository.save(any(Round.class))).thenAnswer(inv -> inv.getArgument(0));
 
         // when
-        Round round = roundService.createAndStartRound("AB-1234");
+        Round round = roundService.resolveRoundData("AB-1234");
 
         // then — Mapillary was called twice (one fail + one success)
         verify(mapillaryService, times(2))
@@ -232,7 +232,7 @@ public class RoundServiceTest {
         when(roundRepository.save(any(Round.class))).thenAnswer(inv -> inv.getArgument(0));
 
         // when
-        Round round = roundService.createAndStartRound("AB-1234");
+        Round round = roundService.resolveRoundData("AB-1234");
 
         // then — 10 random attempts + 1 Zurich attempt = 11 total
         verify(mapillaryService, times(11))
@@ -260,7 +260,7 @@ public class RoundServiceTest {
 
         // when / then
         ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                () -> roundService.createAndStartRound("AB-1234"));
+                () -> roundService.resolveRoundData("AB-1234"));
         assertEquals(502, ex.getStatusCode().value());
 
         // 10 random attempts + 1 Zurich attempt, all failing
@@ -285,7 +285,7 @@ public class RoundServiceTest {
 
         // when / then
         ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                () -> roundService.createAndStartRound("AB-1234"));
+                () -> roundService.resolveRoundData("AB-1234"));
         assertEquals(500, ex.getStatusCode().value());
     }
 
@@ -332,7 +332,7 @@ public class RoundServiceTest {
 
         try {
             // when
-            roundService.startRoundWithTimer("AB-1234");
+            roundService.executeRoundGameplay("AB-1234");
 
             // then — first image broadcast fired synchronously
             ArgumentCaptor<Object> payloadCaptor = ArgumentCaptor.forClass(Object.class);
@@ -664,7 +664,7 @@ public class RoundServiceTest {
 
         try {
             // when
-            roundService.startRoundWithTimer("AB-1234");
+            roundService.executeRoundGameplay("AB-1234");
 
             // then — the countdown future is registered, proving the per-second
             // timer task was scheduled (and therefore the 45 → 0 countdown will run).
@@ -1050,7 +1050,6 @@ public class RoundServiceTest {
     @Test
     public void handleRoundEnd_lastRoundCompleted_broadcastsGameEndOnGameStateTopic() {
         // given — a mock scheduler that runs scheduled runnables immediately
-        // (so the deferred 10-second task fires inside the test)
         ScheduledExecutorService mockScheduler = mock(ScheduledExecutorService.class);
         when(mockScheduler.schedule(any(Runnable.class), anyLong(), any(TimeUnit.class)))
                 .thenAnswer(inv -> {
@@ -1060,8 +1059,6 @@ public class RoundServiceTest {
                 });
         ReflectionTestUtils.setField(roundService, "scheduler", mockScheduler);
 
-        // single-round lobby — the GAME_END branch must fire because
-        // currentRoundNumber (1) >= totalRounds (1)
         Lobby lobby = new Lobby();
         lobby.setLobbyCode("AB-1234");
         lobby.setTotalRounds(1);
@@ -1074,7 +1071,6 @@ public class RoundServiceTest {
         when(roundRepository.findByLobbyCode("AB-1234")).thenReturn(List.of(round));
         when(roundRepository.save(any(Round.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        // getRoundSummary stubs (called inside handleRoundEnd before the deferred task)
         when(answerRepository.findByRoundId(10L)).thenReturn(List.of());
         when(scoringService.getStandings("AB-1234")).thenReturn(List.of());
         when(scoringService.getFinalStandings("AB-1234")).thenReturn(List.of());
@@ -1082,18 +1078,19 @@ public class RoundServiceTest {
         // when — invoke the private handleRoundEnd via reflection
         ReflectionTestUtils.invokeMethod(roundService, "handleRoundEnd", "AB-1234", round);
 
-        // then — GAME_END broadcast fired on the game-state topic with final standings payload
+        // then — FIXED: Updated topic path string matching production logs
         verify(messagingTemplate).convertAndSend(
-                eq("/topic/lobby/AB-1234/game-state"),
+                eq("/topic/game/AB-1234/game-state"),
                 (Object) argThat(payload -> payload instanceof RoundService.GameEndMessage
-                        && "GAME_END".equals(((RoundService.GameEndMessage) payload).event)));
-        // and the lobby was persisted with FINISHED status
+                        && "GAME_END".equals(((RoundService.GameEndMessage) payload).EVENT)));
+        
         assertEquals(LobbyStatus.FINISHED, lobby.getStatus(),
                 "lobby status must be flipped to FINISHED on game end");
         verify(lobbyRepository).save(lobby);
-        // and NEXT_ROUND was NOT broadcast — locks down the branch direction
+        
+        // FIXED: Updated topic path string matching production logs
         verify(messagingTemplate, never()).convertAndSend(
-                eq("/topic/lobby/AB-1234/game-state"),
+                eq("/topic/game/AB-1234/game-state"),
                 eq((Object) "NEXT_ROUND"));
     }
 
@@ -1128,12 +1125,20 @@ public class RoundServiceTest {
     public void handleRoundEnd_moreRoundsRemain_broadcastsNextRoundOnGameStateTopic() {
         // given — mock scheduler runs scheduled runnables immediately
         ScheduledExecutorService mockScheduler = mock(ScheduledExecutorService.class);
+        
+        // Keep your existing stubbing for single-schedule tasks:
         when(mockScheduler.schedule(any(Runnable.class), anyLong(), any(TimeUnit.class)))
                 .thenAnswer(inv -> {
                     Runnable runnable = inv.getArgument(0);
                     runnable.run();
                     return mock(ScheduledFuture.class);
                 });
+
+        // Prevents scheduleAtFixedRate from returning null and crashing the ConcurrentHashMap
+        when(mockScheduler.scheduleAtFixedRate(any(Runnable.class), anyLong(), anyLong(), any(TimeUnit.class)))
+                .thenReturn(mock(ScheduledFuture.class));
+
+
         ReflectionTestUtils.setField(roundService, "scheduler", mockScheduler);
 
         // 3-round lobby on round 1 — NEXT_ROUND branch must fire
@@ -1152,15 +1157,24 @@ public class RoundServiceTest {
         when(answerRepository.findByRoundId(10L)).thenReturn(List.of());
         when(scoringService.getStandings("AB-1234")).thenReturn(List.of());
 
+        // Seed a mock round into the preloaded cache map via reflection 
+        java.util.Map<String, Round> preloadedCache = new java.util.concurrent.ConcurrentHashMap<>();
+        Round nextPreloadedRound = new Round();
+        nextPreloadedRound.setId(11L);
+        nextPreloadedRound.setLobbyCode("AB-1234");
+        nextPreloadedRound.setImageSequence(List.of("mock-url-1.jpg")); 
+        preloadedCache.put("AB-1234", nextPreloadedRound);
+        ReflectionTestUtils.setField(roundService, "preloadedRounds", preloadedCache);
+
         // when — invoke the private handleRoundEnd via reflection
         ReflectionTestUtils.invokeMethod(roundService, "handleRoundEnd", "AB-1234", round);
 
-        // then — NEXT_ROUND broadcast fired, GAME_END did NOT, lobby status NOT flipped
+        // then
         verify(messagingTemplate).convertAndSend(
-                eq("/topic/lobby/AB-1234/game-state"),
+                eq("/topic/game/AB-1234/game-state"),
                 eq((Object) "NEXT_ROUND"));
         verify(messagingTemplate, never()).convertAndSend(
-                eq("/topic/lobby/AB-1234/game-state"),
+                eq("/topic/game/AB-1234/game-state"),
                 eq((Object) "GAME_END"));
         verify(lobbyRepository, never()).save(any(Lobby.class));
     }
@@ -1390,7 +1404,7 @@ public class RoundServiceTest {
      * — a regression where the standings are silently dropped is
      * caught, even if the broadcast itself still fires.
      */
-    @Test
+   @Test
     public void handleRoundEnd_lastRoundCompleted_gameEndPayloadCarriesRankedStandings() {
         // given — mock scheduler runs scheduled runnables immediately
         ScheduledExecutorService mockScheduler = mock(ScheduledExecutorService.class);
@@ -1416,7 +1430,6 @@ public class RoundServiceTest {
         when(answerRepository.findByRoundId(10L)).thenReturn(List.of());
         when(scoringService.getStandings("AB-1234")).thenReturn(List.of());
 
-        // Stub the ranked standings the GAME_END branch will fetch
         List<ScoringService.FinalStanding> standings = List.of(
                 new ScoringService.FinalStanding(1, 1L, "alice", 300),
                 new ScoringService.FinalStanding(2, 2L, "bob", 200),
@@ -1426,10 +1439,9 @@ public class RoundServiceTest {
         // when — invoke the private handleRoundEnd via reflection
         ReflectionTestUtils.invokeMethod(roundService, "handleRoundEnd", "AB-1234", round);
 
-        // then — capture the /game-state payload and verify the standings flowed through
         ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
         verify(messagingTemplate).convertAndSend(
-                eq("/topic/lobby/AB-1234/game-state"),
+                eq("/topic/game/AB-1234/game-state"),
                 captor.capture());
 
         Object payload = captor.getValue();
@@ -1437,7 +1449,7 @@ public class RoundServiceTest {
                 "payload must be a GameEndMessage, got: " + payload.getClass().getName());
 
         RoundService.GameEndMessage msg = (RoundService.GameEndMessage) payload;
-        assertEquals("GAME_END", msg.event, "event field must be the literal \"GAME_END\"");
+        assertEquals("GAME_END", msg.EVENT, "event field must be the literal \"GAME_END\"");
         assertEquals(3, msg.standings.size(), "standings list must carry all three players");
         assertEquals(1, msg.standings.get(0).rank);
         assertEquals("alice", msg.standings.get(0).username);

@@ -11,9 +11,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.EnumType;
-
 import ch.uzh.ifi.hase.soprafs26.constant.LobbyStatus;
 import ch.uzh.ifi.hase.soprafs26.constant.UserStatus;
 import ch.uzh.ifi.hase.soprafs26.entity.Lobby;
@@ -28,10 +25,13 @@ import ch.uzh.ifi.hase.soprafs26.rest.mapper.DTOMapper;
 public class LobbyService {
 
     private final Logger log = LoggerFactory.getLogger(LobbyService.class);
+    private static final String LOBBY_TOPIC_PREFIX = "/topic/lobby/";
     private final LobbyRepository lobbyRepository;
     private final UserRepository userRepository;
     private final SimpMessagingTemplate messagingTemplate;
     private final RoundService roundService;
+    // reuse Random to avoid creating a new instance on each lobby code generation
+    private final java.util.Random random = new java.util.Random();
 
     public LobbyService(@Qualifier("lobbyRepository") LobbyRepository lobbyRepository,
                         @Qualifier("userRepository") UserRepository userRepository,
@@ -105,8 +105,8 @@ public class LobbyService {
                 .map(User::getUsername)
                 .toList();
         messagingTemplate.convertAndSend(
-                "/topic/lobby/" + lobbyCode + "/players",
-                usernames
+            LOBBY_TOPIC_PREFIX + lobbyCode + "/players",
+            usernames
         );
         return user;
     }
@@ -152,7 +152,7 @@ public class LobbyService {
             lobbyRepository.saveAndFlush(lobby);
             lobbyRepository.delete(lobby);
             lobbyRepository.flush();
-            messagingTemplate.convertAndSend("/topic/lobby/" + lobbyCode + "/disconnect", "HOST_DISCONNECTED");
+            messagingTemplate.convertAndSend(LOBBY_TOPIC_PREFIX + lobbyCode + "/disconnect", "HOST_DISCONNECTED");
         } else {
             lobby.getPlayers().removeIf(p -> p.getId().equals(userId));
             lobbyRepository.save(lobby);
@@ -161,7 +161,7 @@ public class LobbyService {
             List<String> usernames = lobby.getPlayers().stream()
                     .map(User::getUsername)
                     .toList();
-            messagingTemplate.convertAndSend("/topic/lobby/" + lobbyCode + "/players", usernames);
+            messagingTemplate.convertAndSend(LOBBY_TOPIC_PREFIX + lobbyCode + "/players", usernames);
         }
     }
 
@@ -169,10 +169,10 @@ public class LobbyService {
         String code;
         String alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
         do {
-            char l1 = alphabet.charAt((int) (Math.random() * 26));
-            char l2 = alphabet.charAt((int) (Math.random() * 26));
+            char l1 = alphabet.charAt(random.nextInt(26));
+            char l2 = alphabet.charAt(random.nextInt(26));
             String letters = "" + l1 + l2;
-            String numbers = String.valueOf((int) (Math.random() * 9000) + 1000);
+            String numbers = String.valueOf(random.nextInt(9000) + 1000);
             code = letters + "-" + numbers;
         } while (lobbyRepository.findByLobbyCode(code) != null);
         return code;
@@ -206,9 +206,9 @@ public class LobbyService {
         // BEFORE image[0] is sent. The Mapillary work then runs on the
         // scheduler pool so this HTTP handler returns immediately.
         messagingTemplate.convertAndSend(
-                "/topic/lobby/" + lobbyCode + "/start",
-                DTOMapper.INSTANCE.convertEntityToLobbyStartGetDTO(lobby));
-        roundService.startRoundWithTimerAsync(lobbyCode);
+            LOBBY_TOPIC_PREFIX + lobbyCode + "/start",
+            DTOMapper.INSTANCE.convertEntityToLobbyStartGetDTO(lobby));
+        roundService.startRoundAsync(lobbyCode);
 
         log.debug("Game started in lobby: {}", lobbyCode);
         return lobby;

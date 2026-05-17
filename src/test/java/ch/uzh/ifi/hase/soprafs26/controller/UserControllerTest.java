@@ -4,7 +4,6 @@ import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
 
-import ch.uzh.ifi.hase.soprafs26.constant.UserStatus;
 import ch.uzh.ifi.hase.soprafs26.entity.User;
 import ch.uzh.ifi.hase.soprafs26.rest.dto.UserPostDTO;
 import ch.uzh.ifi.hase.soprafs26.service.UserService;
@@ -40,7 +39,7 @@ import ch.uzh.ifi.hase.soprafs26.service.LobbyService;
  * This tests if the UserController works.
  */
 @WebMvcTest(UserController.class)
-public class UserControllerTest {
+class UserControllerTest {
 
 	@Autowired
 	private MockMvc mockMvc;
@@ -52,7 +51,7 @@ public class UserControllerTest {
 	private LobbyService lobbyService;
 
 	@Test
-	public void givenUsers_whenGetUsers_thenReturnJsonArray() throws Exception {
+	void givenUsers_whenGetUsers_thenReturnJsonArray() throws Exception {
 		// given
 		User user = new User();
 		user.setUsername("firstname@lastname");
@@ -95,7 +94,7 @@ public class UserControllerTest {
 	 * and are covered by UserServiceTest.
 	 */
 	@Test
-	public void createUser_validInput_userCreated() throws Exception {
+	void createUser_validInput_userCreated() throws Exception {
 		// given — a fresh UserPostDTO from the client and the service's expected
 		// "persisted" return value (with a generated id)
 		User user = new User();
@@ -136,11 +135,10 @@ public class UserControllerTest {
 	 * motivated the explicit join-table clear in LobbyService.removePlayer.
 	 */
 	@Test
-	public void deleteUser_validId_returnsNoContentAndCascadesInOrder() throws Exception {
+	void deleteUser_validId_returnsNoContentAndCascadesInOrder() throws Exception {
 		// given — a user id the client is logging out
 		Long userId = 42L;
-
-		// when — DELETE /users/{id}
+		
 		mockMvc.perform(delete("/users/{id}", userId))
 				.andExpect(status().isNoContent());
 
