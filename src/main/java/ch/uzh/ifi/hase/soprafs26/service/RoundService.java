@@ -44,7 +44,7 @@ import jakarta.annotation.PostConstruct;
 @Transactional
 public class RoundService {
 
-    private static final String GAME_TOPIC_PREFIX = "/topic/game/";
+    private static final String GAME_TOPIC_PREFIX = "/topic/lobby/";
 
     private final RoundRepository roundRepository;
     private final MapillaryService mapillaryService;

@@ -337,7 +337,7 @@ public class RoundServiceTest {
             // then — first image broadcast fired synchronously
             ArgumentCaptor<Object> payloadCaptor = ArgumentCaptor.forClass(Object.class);
             verify(messagingTemplate).convertAndSend(
-                    eq("/topic/game/AB-1234/image"),
+                    eq("/topic/lobby/AB-1234/image"),
                     payloadCaptor.capture());
 
             Object payload = payloadCaptor.getValue();
@@ -376,7 +376,7 @@ public class RoundServiceTest {
         // then
         ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
         verify(messagingTemplate).convertAndSend(
-                eq("/topic/game/AB-1234/image"),
+                eq("/topic/lobby/AB-1234/image"),
                 captor.capture());
         RoundService.ImageBroadcastMessage msg =
                 (RoundService.ImageBroadcastMessage) captor.getValue();
@@ -753,7 +753,7 @@ public class RoundServiceTest {
 
         // and the round-end broadcast went out on the right game-scoped topic with "ROUND_ENDED"
         verify(messagingTemplate).convertAndSend(
-                eq("/topic/game/AB-1234/roundEnd"),
+                eq("/topic/lobby/AB-1234/roundEnd"),
                 eq((Object) "ROUND_ENDED"));
     }
 
@@ -813,7 +813,7 @@ public class RoundServiceTest {
         assertFalse(round.isFinished(),
                 "round must NOT be finished — only 2 of 3 players have answered");
         verify(messagingTemplate, never()).convertAndSend(
-                eq("/topic/game/AB-1234/roundEnd"), any(Object.class));
+                eq("/topic/lobby/AB-1234/roundEnd"), any(Object.class));
     }
 
     // -------------------------------------------------------------------
@@ -990,7 +990,7 @@ public class RoundServiceTest {
      *         return;
      *     }
      * → handleRoundEnd will run its full body even on an already-finished
-     * round, the messagingTemplate.convertAndSend("/topic/game/AB-1234/roundEnd", ...)
+     * round, the messagingTemplate.convertAndSend("/topic/lobby/AB-1234/roundEnd", ...)
      * call fires, and the verify(..., never()) assertion fails. This
      * proves the test pins the guard's existence specifically, and
      * detects a regression that re-introduces the double-broadcast bug.
@@ -1009,7 +1009,7 @@ public class RoundServiceTest {
         // then — no /roundEnd broadcast, no /summary broadcast, no save,
         // no scoring lookup. The guard short-circuited before any work.
         verify(messagingTemplate, never()).convertAndSend(
-                eq("/topic/game/AB-1234/roundEnd"), any(Object.class));
+                eq("/topic/lobby/AB-1234/roundEnd"), any(Object.class));
         verify(messagingTemplate, never()).convertAndSend(
                 eq("/topic/lobby/AB-1234/summary"), any(Object.class));
         verify(roundRepository, never()).save(any(Round.class));
@@ -1080,7 +1080,7 @@ public class RoundServiceTest {
 
         // then — FIXED: Updated topic path string matching production logs
         verify(messagingTemplate).convertAndSend(
-                eq("/topic/game/AB-1234/game-state"),
+                eq("/topic/lobby/AB-1234/game-state"),
                 (Object) argThat(payload -> payload instanceof RoundService.GameEndMessage
                         && "GAME_END".equals(((RoundService.GameEndMessage) payload).EVENT)));
         
@@ -1090,7 +1090,7 @@ public class RoundServiceTest {
         
         // FIXED: Updated topic path string matching production logs
         verify(messagingTemplate, never()).convertAndSend(
-                eq("/topic/game/AB-1234/game-state"),
+                eq("/topic/lobby/AB-1234/game-state"),
                 eq((Object) "NEXT_ROUND"));
     }
 
@@ -1171,10 +1171,10 @@ public class RoundServiceTest {
 
         // then
         verify(messagingTemplate).convertAndSend(
-                eq("/topic/game/AB-1234/game-state"),
+                eq("/topic/lobby/AB-1234/game-state"),
                 eq((Object) "NEXT_ROUND"));
         verify(messagingTemplate, never()).convertAndSend(
-                eq("/topic/game/AB-1234/game-state"),
+                eq("/topic/lobby/AB-1234/game-state"),
                 eq((Object) "GAME_END"));
         verify(lobbyRepository, never()).save(any(Lobby.class));
     }
@@ -1441,7 +1441,7 @@ public class RoundServiceTest {
 
         ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
         verify(messagingTemplate).convertAndSend(
-                eq("/topic/game/AB-1234/game-state"),
+                eq("/topic/lobby/AB-1234/game-state"),
                 captor.capture());
 
         Object payload = captor.getValue();

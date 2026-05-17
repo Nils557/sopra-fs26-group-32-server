@@ -12,6 +12,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import ch.uzh.ifi.hase.soprafs26.entity.User;
 import ch.uzh.ifi.hase.soprafs26.repository.UserRepository;
+import ch.uzh.ifi.hase.soprafs26.repository.AnswerRepository;
 
 /**
  * User Service
@@ -27,9 +28,11 @@ public class UserService {
 	private final Logger log = LoggerFactory.getLogger(UserService.class);
 
 	private final UserRepository userRepository;
+	private final AnswerRepository answerRepository;
 
-	public UserService(@Qualifier("userRepository") UserRepository userRepository) {
+	public UserService(@Qualifier("userRepository") UserRepository userRepository, @Qualifier("answerRepository") AnswerRepository answerRepository) {
 		this.userRepository = userRepository;
+		this.answerRepository = answerRepository;
 	}
 
 	public List<User> getUsers() {
@@ -71,6 +74,7 @@ public class UserService {
 	}
 
 	public void deleteUser(Long userId) {
+		answerRepository.deleteByUserId(userId);
 		userRepository.deleteById(userId);
 	}
 }
